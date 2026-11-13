@@ -26,7 +26,7 @@
           "$playerId": {
             ".validate": "newData.hasChildren(['id', 'name', 'balance', 'status'])",
             "balance": {
-              ".validate": "newData.isNumber() && (newData.parent().child('status').val() !== 'active' || (!newData.parent().parent().parent().child('meta').child('negativeLimit').exists() && !root.child('rooms').child($roomCode).child('meta').child('negativeLimit').exists()) || (newData.parent().parent().parent().child('meta').child('negativeLimit').exists() ? newData.val() >= -newData.parent().parent().parent().child('meta').child('negativeLimit').val() : newData.val() >= -root.child('rooms').child($roomCode).child('meta').child('negativeLimit').val()))"
+              ".validate": "newData.isNumber() && (newData.parent().child('status').val() !== 'active' || (!newData.parent().parent().parent().child('meta').child('negativeLimit').exists() && !root.child('rooms').child($roomCode).child('meta').child('negativeLimit').exists()) || (newData.parent().parent().parent().child('meta').child('negativeLimit').exists() && newData.val() >= -newData.parent().parent().parent().child('meta').child('negativeLimit').val()) || (!newData.parent().parent().parent().child('meta').child('negativeLimit').exists() && root.child('rooms').child($roomCode).child('meta').child('negativeLimit').exists() && newData.val() >= -root.child('rooms').child($roomCode).child('meta').child('negativeLimit').val()))"
             },
             "status": {
               ".validate": "newData.val() === 'active' || newData.val() === 'bankrupt' || newData.val() === 'removed'"
