@@ -687,4 +687,37 @@ describe('undoLastTransaction', () => {
       );
     }
   });
+
+  it('reverses transfer to BANK and blocks undo when Bank lacks funds to refund', () => {
+    let base = makeBaseRoom({ bankStartingCash: 500 });
+    base = joinOrReclaimPlayer(base, { playerId: 'p-raj', name: 'Raj' }).room;
+    base = makeStartedRoom(base, 'p-creator');
+
+    // Raj pays BANK 1000 (Bank 500 -> 1500)
+    const paidBank = applyPayment(base, {
+      fromId: 'p-raj',
+      toId: 'BANK',
+      amount: 1000,
+      actorId: 'p-raj',
+    });
+    expect(paidBank.meta.bankBalance).toBe(1500);
+    expect(paidBank.players['p-raj'].balance).toBe(14000);
+
+    // Undo restores Raj 15000 and Bank 500
+    const undone = undoLastTransaction(paidBank, { actorId: 'p-creator' });
+    expect(undone.meta.bankBalance).toBe(500);
+    expect(undone.players['p-raj'].balance).toBe(15000);
+
+    // If a BANK transfer exists whose refund exceeds current bankBalance, undo blocks cleanly
+    const drainedBankState: RoomState = {
+      ...paidBank,
+      meta: {
+        ...paidBank.meta,
+        bankBalance: 200,
+      },
+    };
+    expect(() =>
+      undoLastTransaction(drainedBankState, { actorId: 'p-creator' })
+    ).toThrow(LedgerError);
+  });
 });

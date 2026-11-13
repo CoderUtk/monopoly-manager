@@ -2,13 +2,13 @@
   "name": "Monopoly & Business Manager",
   "short_name": "Cash Manager",
   "description": "Mobile web cash and mortgage manager for Indian Business and Monopoly",
-  "start_url": "/",
+  "start_url": ".",
   "display": "standalone",
   "background_color": "#fcfbf7",
   "theme_color": "#fcfbf7",
   "icons": [
     {
-      "src": "/icon.svg",
+      "src": "icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"

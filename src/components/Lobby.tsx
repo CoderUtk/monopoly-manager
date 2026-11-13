@@ -19,11 +19,13 @@ import { MAX_PLAYERS } from '../lib/ledger';
 import { createLocalPlayerId, getRoomCodeFromUrl } from '../lib/session';
 import './Lobby.css';
 
+export type LobbyTab = 'join' | 'create';
+
 export interface LobbyProps {
+  activeTab?: LobbyTab;
+  onTabChange?: (tab: LobbyTab) => void;
   onEnterRoom: (session: LocalSession, room: RoomState) => void;
 }
-
-type LobbyTab = 'join' | 'create';
 type CurrencyPresetId = 'inr' | 'usd' | 'eur' | 'gbp' | 'custom';
 
 interface CurrencyPreset {
@@ -62,11 +64,19 @@ function parseNonNegativeWholeNumber(
   return { ok: true, value: parsed };
 }
 
-export function Lobby({ onEnterRoom }: LobbyProps) {
+export function Lobby({ activeTab: controlledTab, onTabChange, onEnterRoom }: LobbyProps) {
   const firebaseReady = isFirebaseConfigured();
   const initialUrlCode = useMemo(() => getRoomCodeFromUrl(), []);
 
-  const [activeTab, setActiveTab] = useState<LobbyTab>('join');
+  const [uncontrolledTab, setUncontrolledTab] = useState<LobbyTab>('join');
+  const activeTab = controlledTab ?? uncontrolledTab;
+
+  function selectTab(nextTab: LobbyTab) {
+    if (controlledTab === undefined) {
+      setUncontrolledTab(nextTab);
+    }
+    onTabChange?.(nextTab);
+  }
 
   // Join & reclaim state
   const [roomCodeInput, setRoomCodeInput] = useState<string>(() => initialUrlCode ?? '');
@@ -371,9 +381,9 @@ export function Lobby({ onEnterRoom }: LobbyProps) {
   }
 
   return (
-    <section className="panel stack-md" aria-label="Game lobby">
+    <section id="lobby" className="panel stack-md" aria-label="Game lobby">
       <div className="stack-xs">
-        <h1>Digital banker for your tabletop game</h1>
+        <h2>Enter a table</h2>
         <p className="text-sm text-muted">
           Create a shared room or join an existing table with its 6-character code.
         </p>
@@ -387,7 +397,7 @@ export function Lobby({ onEnterRoom }: LobbyProps) {
           aria-selected={activeTab === 'join'}
           aria-controls="lobby-panel-join"
           className={activeTab === 'join' ? 'lobby-tab lobby-tab--active' : 'lobby-tab'}
-          onClick={() => setActiveTab('join')}
+          onClick={() => selectTab('join')}
         >
           <Search size={18} aria-hidden="true" />
           <span>Join room</span>
@@ -399,7 +409,7 @@ export function Lobby({ onEnterRoom }: LobbyProps) {
           aria-selected={activeTab === 'create'}
           aria-controls="lobby-panel-create"
           className={activeTab === 'create' ? 'lobby-tab lobby-tab--active' : 'lobby-tab'}
-          onClick={() => setActiveTab('create')}
+          onClick={() => selectTab('create')}
         >
           <PlusCircle size={18} aria-hidden="true" />
           <span>Create room</span>
