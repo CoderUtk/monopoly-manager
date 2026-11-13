@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   History,
@@ -9,9 +9,11 @@ import {
   Users,
 } from 'lucide-react';
 import type { LocalSession, RoomState } from './types/game';
-import { clearSession, getRoomCodeFromUrl, loadSession } from './lib/session';
+import { clearSession, loadSession, saveSession } from './lib/session';
 import { isFirebaseConfigured, subscribeRoom } from './lib/roomStore';
 import { formatCurrency } from './lib/format';
+import { Lobby } from './components/Lobby';
+import { ShareSheet } from './components/ShareSheet';
 
 export type ActiveTab = 'table' | 'mortgages' | 'history';
 
@@ -23,7 +25,7 @@ const TABS: ReadonlyArray<{ id: ActiveTab; label: string; icon: typeof Users }> 
 
 export function App() {
   const firebaseReady = isFirebaseConfigured();
-  const urlRoomCode = useMemo(() => getRoomCodeFromUrl(), []);
+  const preloadedRoomCodeRef = useRef<string | null>(null);
 
   const [session, setSession] = useState<LocalSession | null>(() => loadSession());
   const [room, setRoom] = useState<RoomState | null>(null);
@@ -40,7 +42,11 @@ export function App() {
       return;
     }
 
-    setLoading(true);
+    const hasPreloadedRoom = preloadedRoomCodeRef.current === session.roomCode;
+    preloadedRoomCodeRef.current = null;
+    if (!hasPreloadedRoom) {
+      setLoading(true);
+    }
     setError(null);
 
     const unsubscribe = subscribeRoom(
@@ -67,7 +73,19 @@ export function App() {
     firebaseReady && session && !loading && !error && room && !seatMissingOrRemoved
   );
 
+  function handleEnterRoom(nextSession: LocalSession, nextRoom: RoomState) {
+    preloadedRoomCodeRef.current = nextRoom.meta.code;
+    saveSession(nextSession);
+    setSession(nextSession);
+    setRoom(nextRoom);
+    setError(null);
+    setLoading(false);
+    setShareOpen(false);
+    setActiveTab('table');
+  }
+
   function handleLeaveRoom() {
+    preloadedRoomCodeRef.current = null;
     clearSession();
     setSession(null);
     setRoom(null);
@@ -108,7 +126,8 @@ export function App() {
               <button
                 type="button"
                 className="btn btn-secondary btn-compact"
-                onClick={() => setShareOpen((prev) => !prev)}
+                onClick={() => setShareOpen(true)}
+                aria-haspopup="dialog"
                 aria-expanded={shareOpen}
               >
                 <QrCode size={18} aria-hidden="true" />
@@ -129,23 +148,12 @@ export function App() {
 
       <main className={showBottomNav ? 'app-main' : 'app-main app-main--no-nav'}>
         <div className="stack-md">
-          {shareOpen && session && (
-            <section className="panel stack-sm" aria-label="Share room">
-              <div className="row-between">
-                <h2>Invite players</h2>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-compact"
-                  onClick={() => setShareOpen(false)}
-                >
-                  Close
-                </button>
-              </div>
-              <p className="text-sm text-muted">
-                Share room code <strong className="tabular-nums">{session.roomCode}</strong> so players
-                can join from their phone. QR code sharing arrives in the next update.
-              </p>
-            </section>
+          {session && (
+            <ShareSheet
+              open={shareOpen}
+              roomCode={session.roomCode}
+              onClose={() => setShareOpen(false)}
+            />
           )}
 
           {!firebaseReady && (
@@ -155,34 +163,14 @@ export function App() {
                 <h2>Firebase configuration needed</h2>
               </div>
               <p className="text-sm">
-                Add your Firebase Realtime Database keys in <code>.env.local</code> before creating or
-                joining live game rooms.
+                Add <code>VITE_FIREBASE_API_KEY</code>, <code>VITE_FIREBASE_DATABASE_URL</code>, and
+                your remaining <code>VITE_FIREBASE_*</code> keys in <code>.env.local</code> before
+                creating or joining live game rooms.
               </p>
             </section>
           )}
 
-          {firebaseReady && !session && (
-            <section className="panel stack-md" aria-label="Game lobby">
-              <div className="stack-xs">
-                <h1>Digital banker for your tabletop game</h1>
-                <p className="text-muted">
-                  Create a shared room for Monopoly or Business, or enter a 6-character code to join
-                  your table.
-                </p>
-              </div>
-
-              {urlRoomCode && (
-                <p className="text-sm">
-                  Invite code detected in URL:{' '}
-                  <strong className="tabular-nums">{urlRoomCode}</strong>
-                </p>
-              )}
-
-              <p className="text-sm text-muted">
-                Room creation and join controls will mount in this lobby shell.
-              </p>
-            </section>
-          )}
+          {firebaseReady && !session && <Lobby onEnterRoom={handleEnterRoom} />}
 
           {firebaseReady && session && loading && (
             <section className="panel stack-md" aria-busy="true" aria-label="Loading room">
