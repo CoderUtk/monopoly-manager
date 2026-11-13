@@ -11,9 +11,9 @@ import {
 import type { LocalSession, RoomState } from './types/game';
 import { clearSession, loadSession, saveSession } from './lib/session';
 import { isFirebaseConfigured, subscribeRoom } from './lib/roomStore';
-import { formatCurrency } from './lib/format';
 import { Lobby } from './components/Lobby';
 import { ShareSheet } from './components/ShareSheet';
+import { TableView } from './components/TableView';
 
 export type ActiveTab = 'table' | 'mortgages' | 'history';
 
@@ -268,22 +268,11 @@ export function App() {
           {firebaseReady && session && !loading && !error && room && currentPlayer && !seatMissingOrRemoved && (
             <>
               {activeTab === 'table' && (
-                <section className="panel stack-md" aria-label="Table view">
-                  <div className="row-between">
-                    <h1>{currentPlayer.name}</h1>
-                    <span className="pill pill-accent tabular-nums">
-                      {formatCurrency(
-                        currentPlayer.balance,
-                        room.meta.currencySymbol,
-                        room.meta.currencyLocale
-                      )}
-                    </span>
-                  </div>
-                  <p className="text-sm text-muted">
-                    Table view ready. Player cards, quick-pay actions, and banker controls will mount
-                    here.
-                  </p>
-                </section>
+                <TableView
+                  room={room}
+                  playerId={currentPlayer.id}
+                  onOpenMortgages={() => setActiveTab('mortgages')}
+                />
               )}
 
               {activeTab === 'mortgages' && (
