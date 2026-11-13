@@ -1,0 +1,265 @@
+/* Hallmark · shape: app screen · scope: app · genre: modern-minimal · theme: custom · v2.0.0 */
+
+.ledger-list {
+  list-style: none;
+  margin: var(--space-0);
+  padding: var(--space-0);
+}
+
+.ledger-divider {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-3);
+}
+
+.ledger-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-0);
+  color: var(--color-ink-muted);
+}
+
+.ledger-inline-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--color-danger-soft-ink);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.ledger-inline-alert svg {
+  flex-shrink: 0;
+  margin-top: var(--space-1);
+}
+
+/* Issue Mortgage Form */
+.mortgage-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+@media (min-width: 32rem) {
+  .mortgage-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mortgage-form-span {
+    grid-column: 1 / -1;
+  }
+}
+
+.mortgage-preview-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.mortgage-preview-value {
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  color: var(--color-ink);
+}
+
+.mortgage-submit-btn {
+  width: 100%;
+}
+
+/* Mortgage Rows */
+.mortgage-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-0);
+  border-top: 1px solid var(--color-border);
+}
+
+.mortgage-row:last-child {
+  padding-bottom: var(--space-0);
+}
+
+.mortgage-row--archived {
+  opacity: 0.78;
+}
+
+.mortgage-row-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.mortgage-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.mortgage-property-name {
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+
+.mortgage-owner-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-ink-muted);
+}
+
+.mortgage-figures {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.mortgage-figure-pair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+}
+
+.mortgage-figure-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  color: var(--color-ink-muted);
+}
+
+.mortgage-figure-value {
+  font-weight: var(--weight-bold);
+  color: var(--color-ink);
+}
+
+.ledger-details-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--touch-min);
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  list-style: none;
+}
+
+.ledger-details-summary::-webkit-details-marker {
+  display: none;
+}
+
+/* History Rows */
+.history-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-0);
+  border-top: 1px solid var(--color-border);
+}
+
+.history-row:last-child {
+  padding-bottom: var(--space-0);
+}
+
+.history-row--undone {
+  opacity: 0.72;
+}
+
+.history-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-md);
+  background-color: var(--color-surface-subtle);
+  color: var(--color-ink-muted);
+  flex-shrink: 0;
+}
+
+.history-icon--in {
+  background-color: var(--color-success-soft);
+  color: var(--color-success-soft-ink);
+}
+
+.history-icon--accent {
+  background-color: var(--color-accent-soft);
+  color: var(--color-accent-soft-ink);
+}
+
+.history-icon--danger {
+  background-color: var(--color-danger-soft);
+  color: var(--color-danger-soft-ink);
+}
+
+.history-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.history-title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-snug);
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+
+.history-title--undone {
+  color: var(--color-ink-muted);
+  text-decoration: line-through;
+}
+
+.history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-ink-muted);
+}
+
+.history-note {
+  overflow-wrap: anywhere;
+}
+
+.history-aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.history-amount {
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+  color: var(--color-ink);
+}
+
+.history-amount--in {
+  color: var(--color-success);
+}
+
+.history-amount--undone {
+  color: var(--color-ink-muted);
+  text-decoration: line-through;
+}

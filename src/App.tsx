@@ -14,6 +14,8 @@ import { isFirebaseConfigured, subscribeRoom } from './lib/roomStore';
 import { Lobby } from './components/Lobby';
 import { ShareSheet } from './components/ShareSheet';
 import { TableView } from './components/TableView';
+import { MortgagesView } from './components/MortgagesView';
+import { HistoryView } from './components/HistoryView';
 
 export type ActiveTab = 'table' | 'mortgages' | 'history';
 
@@ -276,21 +278,11 @@ export function App() {
               )}
 
               {activeTab === 'mortgages' && (
-                <section className="panel stack-sm" aria-label="Mortgages view">
-                  <h2>Mortgages</h2>
-                  <p className="text-sm text-muted">
-                    Active property mortgages and payoff actions will mount here.
-                  </p>
-                </section>
+                <MortgagesView room={room} playerId={currentPlayer.id} />
               )}
 
               {activeTab === 'history' && (
-                <section className="panel stack-sm" aria-label="History view">
-                  <h2>History</h2>
-                  <p className="text-sm text-muted">
-                    Live transaction ledger and undo controls will mount here.
-                  </p>
-                </section>
+                <HistoryView room={room} playerId={currentPlayer.id} />
               )}
             </>
           )}
