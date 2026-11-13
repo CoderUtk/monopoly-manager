@@ -1,0 +1,104 @@
+/* Hallmark · shape: app screen · scope: app · genre: modern-minimal · theme: custom · v2.0.0 */
+/* Hallmark · pre-emit critique: P4 H5 E5 S4 R5 V4 · weakest: P, table-side banking risks feeling like a generic form; anchored with warm paper surfaces, emerald-teal ink, and tabular ledger figures */
+/* Hallmark · answered F4 · .btn-primary is the sole table-side CTA; .btn-danger is reserved strictly for destructive confirmation actions */
+
+:root {
+  /* Warm paper surfaces */
+  --color-surface: oklch(98.5% 0.007 85);
+  --color-surface-raised: oklch(99.4% 0.004 85);
+  --color-surface-subtle: oklch(95.2% 0.009 85);
+  --color-surface-wash: oklch(92.5% 0.011 85);
+
+  /* Hairlines & field edges */
+  --color-border: oklch(86% 0.012 85);
+  --color-border-strong: oklch(72% 0.016 160);
+  --color-muted: oklch(54% 0.015 160);
+
+  /* Typography inks */
+  --color-ink: oklch(20% 0.018 165);
+  --color-ink-muted: oklch(44% 0.018 160);
+
+  /* Primary emerald-teal accent */
+  --color-accent: oklch(47% 0.125 168);
+  --color-accent-hover: oklch(41% 0.13 168);
+  --color-accent-ink: oklch(98.5% 0.008 168);
+  --color-accent-soft: oklch(93.5% 0.032 168);
+  --color-accent-soft-ink: oklch(30% 0.085 168);
+
+  /* Semantic feedback */
+  --color-danger: oklch(49% 0.175 25);
+  --color-danger-hover: oklch(43% 0.18 25);
+  --color-danger-ink: oklch(98.5% 0.008 25);
+  --color-danger-soft: oklch(94.5% 0.032 25);
+  --color-danger-soft-ink: oklch(36% 0.13 25);
+
+  --color-warning: oklch(49% 0.135 70);
+  --color-warning-ink: oklch(98.5% 0.008 75);
+  --color-warning-soft: oklch(94.5% 0.04 78);
+  --color-warning-soft-ink: oklch(34% 0.095 68);
+
+  --color-success: oklch(46% 0.13 155);
+  --color-success-ink: oklch(98.5% 0.008 155);
+  --color-success-soft: oklch(93.5% 0.035 155);
+  --color-success-soft-ink: oklch(30% 0.09 155);
+
+  /* Interactive & browser chrome */
+  --color-focus: oklch(47% 0.14 168);
+  --color-scrim: oklch(20% 0.018 165 / 0.42);
+  --color-selection: oklch(88% 0.065 168);
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px oklch(20% 0.018 165 / 0.06), 0 1px 1px oklch(20% 0.018 165 / 0.04);
+  --shadow-md: 0 4px 12px oklch(20% 0.018 165 / 0.08), 0 1px 3px oklch(20% 0.018 165 / 0.05);
+
+  /* Single clean sans-serif stack & 1.15 rem scale */
+  --font-sans: 'Plus Jakarta Sans', 'DM Sans', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+  --text-xs: 0.756rem;
+  --text-sm: 0.87rem;
+  --text-base: 1rem;
+  --text-md: 1.15rem;
+  --text-lg: 1.323rem;
+  --text-xl: 1.521rem;
+  --text-2xl: 1.75rem;
+
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
+  --leading-normal: 1.5;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Radii */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-pill: 9999px;
+
+  /* Spacing scale */
+  --space-0: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+
+  /* Layout & touch ergonomics */
+  --container-max: 40rem;
+  --touch-min: 2.75rem;
+  --topbar-height: 3.5rem;
+  --bottomnav-height: 4.25rem;
+  --z-sticky-nav: 20;
+  --z-sticky: 10;
+  --z-sheet: 40;
+
+  /* Motion */
+  --dur-micro: 150ms;
+  --dur-short: 220ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
