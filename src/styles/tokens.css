@@ -1,6 +1,6 @@
-/* Hallmark · shape: app screen · scope: app · genre: modern-minimal · theme: custom · v2.0.0 */
-/* Hallmark · pre-emit critique: P4 H5 E5 S4 R5 V4 · weakest: P, table-side banking risks feeling like a generic form; anchored with warm paper surfaces, emerald-teal ink, and tabular ledger figures */
-/* Hallmark · answered F4 · .btn-primary is the sole table-side CTA; .btn-danger is reserved strictly for destructive confirmation actions */
+/* Hallmark · shape: Marquee Hero · scope: landing · genre: editorial · theme: Carnival · v2.0.0 */
+/* Hallmark · pre-emit critique: P5 H5 E5 S4 R4 V5 · weakest: R/S, keeping dense paper-rule tables balanced against interactive app lobby without clutter; anchored in screen-printed cream stock, espresso ink rules, and Big Shoulders Display capitals */
+/* Hallmark · answered F4 · .btn-primary is the table-side CTA; .land-btn-primary is the Carnival landing CTA and .btn-danger stays strictly for destructive actions */
 
 :root {
   /* Warm paper surfaces */
@@ -101,4 +101,31 @@
   --dur-micro: 150ms;
   --dur-short: 220ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Carnival landing palette & typography */
+  --land-paper: oklch(92% 0.045 50);
+  --land-paper-2: oklch(88% 0.050 45);
+  --land-paper-3: oklch(82% 0.060 40);
+  --land-ink: oklch(18% 0.080 20);
+  --land-ink-2: oklch(28% 0.060 25);
+  --land-muted: oklch(42% 0.050 30);
+  --land-rule: oklch(40% 0.21 25);
+  --land-accent: oklch(86% 0.18 95);
+  --land-accent-2: oklch(40% 0.21 25);
+  --land-accent-ink: oklch(18% 0.080 20);
+  --land-focus: oklch(40% 0.21 25);
+  --land-font-display: "Big Shoulders Display", Impact, sans-serif;
+  --land-font-body: "Golos Text", system-ui, sans-serif;
+  --land-shadow: 4px 4px 0 var(--land-ink);
+  --land-shadow-sm: 3px 3px 0 var(--land-ink);
+  --land-radius: 2px;
+  --land-rule-bar: 2px;
+  --land-rule-hair: 1px;
+  --land-tracking-display: 0.015em;
+  --land-display-s: clamp(2.35rem, 4.2vw + 0.5rem, 3.75rem);
+  --land-display: clamp(2.85rem, 5.2vw + 0.85rem, 5rem);
+  --land-section: clamp(2rem, 2.5vw + 1rem, 3.25rem);
+  --land-title: clamp(1.25rem, 0.75vw + 0.875rem, 1.625rem);
+  --land-lead: clamp(1.0625rem, 0.35vw + 0.95rem, 1.3rem);
+  --land-container: 1280px;
 }

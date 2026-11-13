@@ -4,17 +4,16 @@ import {
   History,
   Landmark,
   LogOut,
-  PlusCircle,
   QrCode,
   RefreshCw,
-  Search,
-  ShieldCheck,
   Users,
 } from 'lucide-react';
 import type { LocalSession, RoomState } from './types/game';
 import { clearSession, getRoomCodeFromUrl, loadSession, saveSession } from './lib/session';
 import { isFirebaseConfigured, subscribeRoom } from './lib/roomStore';
 import { Lobby, type LobbyTab } from './components/Lobby';
+import { SiteHeader } from './components/SiteHeader';
+import { LandingPage } from './components/LandingPage';
 import { ShareSheet } from './components/ShareSheet';
 import { TableView } from './components/TableView';
 import { MortgagesView } from './components/MortgagesView';
@@ -118,167 +117,124 @@ export function App() {
     document.getElementById('lobby')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  if (!session) {
+    return (
+      <div id="top" className="landing-root">
+        <SiteHeader
+          firebaseReady={firebaseReady}
+          showSectionLinks={firebaseReady && !initialUrlCode}
+          handleNavigateLobby={handleNavigateLobby}
+        />
+
+        <main>
+          {!firebaseReady && (
+            <div className="land-invite-wrap">
+              <div className="land-invite-inner">
+                <section className="panel-warning stack-sm" role="alert">
+                  <div className="row">
+                    <AlertTriangle size={20} aria-hidden="true" />
+                    <h2>Firebase configuration needed</h2>
+                  </div>
+                  <p className="text-sm">
+                    Add <code>VITE_FIREBASE_API_KEY</code>, <code>VITE_FIREBASE_DATABASE_URL</code>,
+                    and your remaining <code>VITE_FIREBASE_*</code> keys in <code>.env.local</code>{' '}
+                    before creating or joining live game rooms.
+                  </p>
+                </section>
+              </div>
+            </div>
+          )}
+
+          {firebaseReady && !initialUrlCode && (
+            <LandingPage
+              handleNavigateLobby={handleNavigateLobby}
+              lobbySlot={
+                <Lobby activeTab={lobbyTab} onTabChange={setLobbyTab} onEnterRoom={handleEnterRoom} />
+              }
+            />
+          )}
+
+          {firebaseReady && initialUrlCode && (
+            <div className="land-invite-wrap">
+              <div className="land-invite-inner">
+                <Lobby activeTab={lobbyTab} onTabChange={setLobbyTab} onEnterRoom={handleEnterRoom} />
+              </div>
+            </div>
+          )}
+        </main>
+
+        <footer className="land-footer">
+          <div className="landing-container land-footer-inner">
+            <p className="land-footer-note">
+              Built for Monopoly and Business nights on real boards. Runs free in your browser.
+            </p>
+            <div className="land-footer-links">
+              <a href="#top" className="land-footer-link">
+                Back to top
+              </a>
+              {firebaseReady && !initialUrlCode && (
+                <a href="#screens" className="land-footer-link">
+                  Screens
+                </a>
+              )}
+              <a href="#lobby" className="land-footer-link">
+                Open lobby
+              </a>
+            </div>
+          </div>
+        </footer>
+      </div>
+    );
+  }
+
   return (
     <div id="top" className="app-shell">
       <header className="app-topbar">
         <div className="app-topbar-inner">
-          {session ? (
-            <div className="app-brand">
-              <span className="pill pill-accent tabular-nums" aria-label={`Room code ${session.roomCode}`}>
-                {session.roomCode}
+          <div className="app-brand">
+            <span className="pill pill-accent tabular-nums" aria-label={`Room code ${session.roomCode}`}>
+              {session.roomCode}
+            </span>
+            {room && (
+              <span
+                className="pill tabular-nums"
+                aria-label={`Table currency ${room.meta.currencySymbol}`}
+              >
+                {room.meta.currencySymbol}
               </span>
-              {room && (
-                <span
-                  className="pill tabular-nums"
-                  aria-label={`Table currency ${room.meta.currencySymbol}`}
-                >
-                  {room.meta.currencySymbol}
-                </span>
-              )}
-            </div>
-          ) : (
-            <a href="#top" className="app-brand">
-              <span className="brand-mark" aria-hidden="true">
-                <Landmark size={18} />
-              </span>
-              <span>Monopoly Manager</span>
-            </a>
-          )}
+            )}
+          </div>
 
-          {session ? (
-            <div className="row">
-              <button
-                type="button"
-                className="btn btn-secondary btn-compact"
-                onClick={() => setShareOpen(true)}
-                aria-haspopup="dialog"
-                aria-expanded={shareOpen}
-              >
-                <QrCode size={18} aria-hidden="true" />
-                <span>Share</span>
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-compact"
-                onClick={handleLeaveRoom}
-              >
-                <LogOut size={18} aria-hidden="true" />
-                <span>Leave</span>
-              </button>
-            </div>
-          ) : (
-            firebaseReady && (
-              <nav className="site-nav" aria-label="Website navigation">
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-compact"
-                  onClick={() => handleNavigateLobby('join')}
-                >
-                  <Search size={16} aria-hidden="true" />
-                  <span>Join</span>
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-compact"
-                  onClick={() => handleNavigateLobby('create')}
-                >
-                  <PlusCircle size={16} aria-hidden="true" />
-                  <span>Create</span>
-                </button>
-              </nav>
-            )
-          )}
+          <div className="row">
+            <button
+              type="button"
+              className="btn btn-secondary btn-compact"
+              onClick={() => setShareOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={shareOpen}
+            >
+              <QrCode size={18} aria-hidden="true" />
+              <span>Share</span>
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-compact"
+              onClick={handleLeaveRoom}
+            >
+              <LogOut size={18} aria-hidden="true" />
+              <span>Leave</span>
+            </button>
+          </div>
         </div>
       </header>
 
       <main className={showBottomNav ? 'app-main' : 'app-main app-main--no-nav'}>
         <div className="stack-md">
-          {session && (
-            <ShareSheet
-              open={shareOpen}
-              roomCode={session.roomCode}
-              onClose={() => setShareOpen(false)}
-            />
-          )}
-
-          {!firebaseReady && (
-            <section className="panel-warning stack-sm" role="alert">
-              <div className="row">
-                <AlertTriangle size={20} aria-hidden="true" />
-                <h2>Firebase configuration needed</h2>
-              </div>
-              <p className="text-sm">
-                Add <code>VITE_FIREBASE_API_KEY</code>, <code>VITE_FIREBASE_DATABASE_URL</code>, and
-                your remaining <code>VITE_FIREBASE_*</code> keys in <code>.env.local</code> before
-                creating or joining live game rooms.
-              </p>
-            </section>
-          )}
-
-          {firebaseReady && !session && !initialUrlCode && (
-            <section className="panel stack-md" aria-label="Welcome">
-              <div className="stack-xs">
-                <h1>Digital banker for Monopoly &amp; Business nights</h1>
-                <p className="text-sm text-muted">
-                  Skip paper cash and manual change. Share a 6-character code so up to 4 players
-                  pay, mortgage, and track a live Bank across phones.
-                </p>
-              </div>
-
-              <div className="row-wrap">
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={() => handleNavigateLobby('create')}
-                >
-                  <PlusCircle size={18} aria-hidden="true" />
-                  <span>Create a room</span>
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => handleNavigateLobby('join')}
-                >
-                  <Search size={18} aria-hidden="true" />
-                  <span>Join with code</span>
-                </button>
-              </div>
-
-              <ul className="landing-steps">
-                <li className="landing-step">
-                  <span className="landing-step-title">
-                    <QrCode size={16} aria-hidden="true" />
-                    <span>Share room code</span>
-                  </span>
-                  <span className="text-xs text-muted">
-                    Up to 4 players join from any phone browser or QR scan.
-                  </span>
-                </li>
-                <li className="landing-step">
-                  <span className="landing-step-title">
-                    <ShieldCheck size={16} aria-hidden="true" />
-                    <span>Pick any Banker</span>
-                  </span>
-                  <span className="text-xs text-muted">
-                    Wait in the lobby, pick who acts as Banker, and start together.
-                  </span>
-                </li>
-                <li className="landing-step">
-                  <span className="landing-step-title">
-                    <Landmark size={16} aria-hidden="true" />
-                    <span>Live Bank &amp; Undo</span>
-                  </span>
-                  <span className="text-xs text-muted">
-                    Enforces debt limits, finite Bank cash, mortgages, and instant Undo.
-                  </span>
-                </li>
-              </ul>
-            </section>
-          )}
-
-          {firebaseReady && !session && (
-            <Lobby activeTab={lobbyTab} onTabChange={setLobbyTab} onEnterRoom={handleEnterRoom} />
-          )}
+          <ShareSheet
+            open={shareOpen}
+            roomCode={session.roomCode}
+            onClose={() => setShareOpen(false)}
+          />
 
           {firebaseReady && session && loading && (
             <section className="panel stack-md" aria-busy="true" aria-label="Loading room">
