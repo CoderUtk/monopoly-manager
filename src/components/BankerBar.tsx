@@ -10,9 +10,10 @@ import {
   UserCog,
   UserMinus,
 } from 'lucide-react';
-import type { Player, RoomState, Transaction, TransactionType } from '../types/game';
+import type { Player, RoomState, Transaction } from '../types/game';
 import {
   applyPayment,
+  getLatestUndoableTransaction,
   markPlayerExit,
   reassignBanker,
   undoLastTransaction,
@@ -28,14 +29,6 @@ export interface BankerBarProps {
   onOpenMortgages: () => void;
   onError?: (message: string) => void;
 }
-
-const UNDOABLE_TYPES: ReadonlySet<TransactionType> = new Set([
-  'transfer',
-  'bank_pay',
-  'pass_start',
-  'mortgage',
-  'unmortgage',
-]);
 
 type BusyAction = 'pass_start' | 'undo' | 'reassign' | 'exit' | 'claim' | null;
 
@@ -90,11 +83,11 @@ export function BankerBar({
   const [error, setError] = useState<string | null>(null);
 
   const isBanker = me.id === room.meta.bankerId && me.status === 'active';
+  const isCreator = me.id === room.meta.creatorId && me.status === 'active';
   const currentBanker = room.players[room.meta.bankerId];
   const needsEmergencyClaim =
     !isBanker &&
-    me.id === room.meta.creatorId &&
-    me.status === 'active' &&
+    isCreator &&
     (!currentBanker || currentBanker.status !== 'active');
 
   const activePlayers = useMemo(
@@ -105,11 +98,7 @@ export function BankerBar({
     [room.players]
   );
 
-  const latestUndoableTx = useMemo(() => {
-    return Object.values(room.transactions ?? {})
-      .filter((tx) => !tx.undone && UNDOABLE_TYPES.has(tx.type))
-      .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))[0] ?? null;
-  }, [room.transactions]);
+  const latestUndoableTx = useMemo(() => getLatestUndoableTransaction(room), [room]);
 
   useEffect(() => {
     if (activePlayers.length === 0) {
@@ -119,14 +108,15 @@ export function BankerBar({
       setPassStartTargetId(activePlayers[0].id);
     }
 
-    const otherPlayers = activePlayers.filter((player) => player.id !== me.id);
+    const nonBankerPlayers = activePlayers.filter((player) => player.id !== room.meta.bankerId);
     if (!activePlayers.some((player) => player.id === reassignTargetId)) {
-      setReassignTargetId(otherPlayers[0]?.id ?? activePlayers[0].id);
+      setReassignTargetId(nonBankerPlayers[0]?.id ?? activePlayers[0].id);
     }
+    const otherPlayers = activePlayers.filter((player) => player.id !== me.id);
     if (!activePlayers.some((player) => player.id === manageTargetId)) {
       setManageTargetId(otherPlayers[0]?.id ?? activePlayers[0].id);
     }
-  }, [activePlayers, manageTargetId, me.id, passStartTargetId, reassignTargetId]);
+  }, [activePlayers, manageTargetId, me.id, passStartTargetId, reassignTargetId, room.meta.bankerId]);
 
   useEffect(() => {
     if (pendingExit && pendingExit.playerId !== manageTargetId) {
@@ -162,48 +152,117 @@ export function BankerBar({
     }
   }
 
-  if (!isBanker && !needsEmergencyClaim) {
+  if (!isBanker && !isCreator) {
     return null;
   }
 
-  if (needsEmergencyClaim) {
+  function renderReassignBankerControl(showLabel = true) {
     return (
-      <section className="panel stack-sm" aria-label="Banker recovery">
+      <div className="stack-xs">
+        {showLabel && (
+          <label className="field-label" htmlFor="banker-reassign-select">
+            Reassign Banker
+          </label>
+        )}
+        <div className="banker-action-row">
+          <select
+            id="banker-reassign-select"
+            aria-label={showLabel ? undefined : 'Reassign Banker'}
+            className="select"
+            value={reassignTargetId}
+            onChange={(event) => {
+              setError(null);
+              setReassignTargetId(event.target.value);
+            }}
+            disabled={busyAction !== null || activePlayers.length <= 1}
+          >
+            {activePlayers.map((player) => (
+              <option key={player.id} value={player.id}>
+                {player.id === room.meta.bankerId
+                  ? `${player.name} (Current Banker)`
+                  : player.id === me.id
+                    ? `${player.name} (You)`
+                    : player.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={
+              busyAction !== null ||
+              !reassignTargetId ||
+              reassignTargetId === room.meta.bankerId
+            }
+            onClick={() =>
+              runBankerMutation('reassign', (latestRoom) =>
+                reassignBanker(latestRoom, {
+                  newBankerId: reassignTargetId,
+                  actorId: me.id,
+                })
+              )
+            }
+          >
+            {busyAction === 'reassign' ? 'Saving...' : 'Transfer'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isBanker && isCreator) {
+    return (
+      <section
+        className="panel stack-sm"
+        aria-label={needsEmergencyClaim ? 'Banker recovery' : 'Reassign Banker'}
+      >
         <div className="row-between">
           <div className="row">
             <ShieldCheck size={20} aria-hidden="true" />
-            <h2>Banker unassigned</h2>
+            <h2>{needsEmergencyClaim ? 'Banker unassigned' : 'Reassign Banker'}</h2>
           </div>
-          <span className="pill pill-warning">Creator recovery</span>
+          <span className={needsEmergencyClaim ? 'pill pill-warning' : 'pill'}>
+            {needsEmergencyClaim ? 'Creator recovery' : 'Creator'}
+          </span>
         </div>
+
         <p className="text-sm text-muted">
-          The current Banker is inactive. As room creator, you can claim the Banker role to keep
-          Bank payouts and undo available.
+          {needsEmergencyClaim
+            ? 'The current Banker is inactive. As room creator, you can claim or reassign the Banker role to keep Bank payouts and undo available.'
+            : `Current Banker: ${currentBanker?.name ?? 'Active player'}. As room creator, you can reassign the Banker role at any time.`}
         </p>
+
+        {needsEmergencyClaim && (
+          <div>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={busyAction !== null}
+              onClick={() =>
+                runBankerMutation('claim', (latestRoom) =>
+                  reassignBanker(latestRoom, {
+                    newBankerId: me.id,
+                    actorId: me.id,
+                  })
+                )
+              }
+            >
+              <ShieldCheck size={18} aria-hidden="true" />
+              <span>{busyAction === 'claim' ? 'Claiming...' : 'Claim Banker'}</span>
+            </button>
+          </div>
+        )}
+
+        <div className={needsEmergencyClaim ? 'table-divider' : undefined}>
+          {renderReassignBankerControl(needsEmergencyClaim)}
+        </div>
+
         {error && (
           <div className="table-inline-alert" role="alert">
             <AlertTriangle size={16} aria-hidden="true" />
             <span>{error}</span>
           </div>
         )}
-        <div>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={busyAction !== null}
-            onClick={() =>
-              runBankerMutation('claim', (latestRoom) =>
-                reassignBanker(latestRoom, {
-                  newBankerId: me.id,
-                  actorId: me.id,
-                })
-              )
-            }
-          >
-            <ShieldCheck size={18} aria-hidden="true" />
-            <span>{busyAction === 'claim' ? 'Claiming...' : 'Claim Banker'}</span>
-          </button>
-        </div>
       </section>
     );
   }
@@ -352,48 +411,7 @@ export function BankerBar({
 
         {manageOpen && (
           <div className="stack-md">
-            <div className="stack-xs">
-              <label className="field-label" htmlFor="banker-reassign-select">
-                Reassign Banker
-              </label>
-              <div className="banker-action-row">
-                <select
-                  id="banker-reassign-select"
-                  className="select"
-                  value={reassignTargetId}
-                  onChange={(event) => {
-                    setError(null);
-                    setReassignTargetId(event.target.value);
-                  }}
-                  disabled={busyAction !== null || activePlayers.length <= 1}
-                >
-                  {activePlayers.map((player) => (
-                    <option key={player.id} value={player.id}>
-                      {player.id === me.id ? `${player.name} (Current Banker)` : player.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={
-                    busyAction !== null ||
-                    !reassignTargetId ||
-                    reassignTargetId === room.meta.bankerId
-                  }
-                  onClick={() =>
-                    runBankerMutation('reassign', (latestRoom) =>
-                      reassignBanker(latestRoom, {
-                        newBankerId: reassignTargetId,
-                        actorId: me.id,
-                      })
-                    )
-                  }
-                >
-                  {busyAction === 'reassign' ? 'Saving...' : 'Transfer'}
-                </button>
-              </div>
-            </div>
+            {renderReassignBankerControl(true)}
 
             <div className="table-divider stack-sm">
               <label className="field-label" htmlFor="banker-exit-select">

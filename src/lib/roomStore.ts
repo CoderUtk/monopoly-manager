@@ -23,29 +23,27 @@ function normalizeRoomCode(code: string): string | null {
   return ROOM_CODE_PATTERN.test(normalized) ? normalized : null;
 }
 
+function normalizeRecordMap<T>(value: unknown): Record<string, T> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, T>;
+  }
+  return {};
+}
+
 function normalizeRoomState(raw: unknown): RoomState | null {
-  if (!raw || typeof raw !== 'object') {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return null;
   }
   const candidate = raw as Partial<RoomState>;
-  if (!candidate.meta || typeof candidate.meta !== 'object') {
+  if (!candidate.meta || typeof candidate.meta !== 'object' || Array.isArray(candidate.meta)) {
     return null;
   }
 
   return {
     meta: candidate.meta,
-    players:
-      candidate.players && typeof candidate.players === 'object'
-        ? candidate.players
-        : {},
-    mortgages:
-      candidate.mortgages && typeof candidate.mortgages === 'object'
-        ? candidate.mortgages
-        : {},
-    transactions:
-      candidate.transactions && typeof candidate.transactions === 'object'
-        ? candidate.transactions
-        : {},
+    players: normalizeRecordMap(candidate.players),
+    mortgages: normalizeRecordMap(candidate.mortgages),
+    transactions: normalizeRecordMap(candidate.transactions),
   };
 }
 
@@ -107,7 +105,7 @@ function primeRoomSyncTree(
         }
         settled = true;
         clearTimeout(timer);
-        resolve({ exists: snapshot.exists(), unsubscribe });
+        resolve({ exists: snapshot.exists(), unsubscribe: () => unsubscribe() });
       },
       (err) => {
         if (settled) {

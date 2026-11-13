@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from 'react';
 import { AlertTriangle, Delete, Landmark, Send, X } from 'lucide-react';
 import type { Player, RoomState } from '../types/game';
 import { applyPayment } from '../lib/ledger';
@@ -27,6 +27,22 @@ interface RecipientOption {
 const MAX_AMOUNT_DIGITS = 8;
 const MAX_AMOUNT_VALUE = 99_999_999;
 const KEYPAD_DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0'] as const;
+
+function applyKeypadInput(prev: string, input: string): string {
+  if (input === 'Backspace') {
+    return prev.slice(0, -1);
+  }
+  if (prev === '' && (input === '0' || input === '00')) {
+    return '';
+  }
+  if (prev === '0') {
+    return input === '0' || input === '00' ? '' : input;
+  }
+  if (prev.length + input.length > MAX_AMOUNT_DIGITS) {
+    return prev;
+  }
+  return prev + input;
+}
 
 export function PaySheet({
   open,
@@ -147,6 +163,17 @@ export function PaySheet({
     }
   }, [open, recipientId, recipients]);
 
+  const applyAmountKey = useCallback(
+    (input: string) => {
+      if (submitting) {
+        return;
+      }
+      setError(null);
+      setAmountStr((prev) => applyKeypadInput(prev, input));
+    },
+    [submitting]
+  );
+
   useEffect(() => {
     if (!open) {
       return;
@@ -160,28 +187,15 @@ export function PaySheet({
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
         return;
       }
-      if (/^[0-9]$/.test(event.key)) {
+      if (/^[0-9]$/.test(event.key) || event.key === 'Backspace') {
         event.preventDefault();
-        setError(null);
-        setAmountStr((prev) => {
-          if (event.key === '0' && prev === '') {
-            return '';
-          }
-          if (prev.length >= MAX_AMOUNT_DIGITS) {
-            return prev;
-          }
-          return prev === '0' ? event.key : prev + event.key;
-        });
-      } else if (event.key === 'Backspace') {
-        event.preventDefault();
-        setError(null);
-        setAmountStr((prev) => prev.slice(0, -1));
+        applyAmountKey(event.key);
       }
     }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, submitting]);
+  }, [applyAmountKey, open, submitting]);
 
   const amount = amountStr ? Number(amountStr) : 0;
   const selectedRecipient = recipients.find((option) => option.id === recipientId) ?? null;
@@ -205,22 +219,6 @@ export function PaySheet({
     amount > 0 &&
     !isOverdraft;
 
-  function handleAppendDigits(chunk: string) {
-    if (submitting) {
-      return;
-    }
-    setError(null);
-    setAmountStr((prev) => {
-      if (prev === '' && (chunk === '0' || chunk === '00')) {
-        return '';
-      }
-      if (prev.length + chunk.length > MAX_AMOUNT_DIGITS) {
-        return prev;
-      }
-      return prev + chunk;
-    });
-  }
-
   function handleAddChip(chipValue: number) {
     if (submitting) {
       return;
@@ -231,14 +229,6 @@ export function PaySheet({
       const next = Math.min(MAX_AMOUNT_VALUE, current + chipValue);
       return next > 0 ? String(next) : '';
     });
-  }
-
-  function handleBackspace() {
-    if (submitting) {
-      return;
-    }
-    setError(null);
-    setAmountStr((prev) => prev.slice(0, -1));
   }
 
   function handleClear() {
@@ -413,7 +403,11 @@ export function PaySheet({
                 <div className="table-inline-alert" role="alert">
                   <AlertTriangle size={16} aria-hidden="true" />
                   <span>
-                    Exceeds debt limit (-{formatCurrency(negativeLimit, currencySymbol, currencyLocale)}) by{' '}
+                    Exceeds debt limit (
+                    <span className="tabular-nums">
+                      {formatCurrency(-negativeLimit, currencySymbol, currencyLocale)}
+                    </span>
+                    ) by{' '}
                     <span className="tabular-nums">
                       {formatCurrency(overdraftExcess, currencySymbol, currencyLocale)}
                     </span>
@@ -476,7 +470,7 @@ export function PaySheet({
               type="button"
               className="pay-key tabular-nums"
               disabled={submitting}
-              onClick={() => handleAppendDigits(key)}
+              onClick={() => applyAmountKey(key)}
             >
               {key}
             </button>
@@ -485,7 +479,7 @@ export function PaySheet({
             type="button"
             className="pay-key"
             disabled={submitting || amountStr.length === 0}
-            onClick={handleBackspace}
+            onClick={() => applyAmountKey('Backspace')}
             aria-label="Backspace"
           >
             <Delete size={20} aria-hidden="true" />

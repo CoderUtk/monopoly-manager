@@ -660,6 +660,25 @@ function findMortgageForTx(
   );
 }
 
+function getLatestNonUndoTransaction(room: RoomState): Transaction | null {
+  return (
+    Object.values(getTransactionsMap(room))
+      .filter((tx) => !tx.undone && tx.type !== 'undo')
+      .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))[0] ?? null
+  );
+}
+
+/**
+ * Return the latest transaction eligible for Undo, or null if blocked by a player exit.
+ */
+export function getLatestUndoableTransaction(room: RoomState): Transaction | null {
+  const latest = getLatestNonUndoTransaction(room);
+  if (!latest || latest.type === 'bankrupt' || latest.type === 'remove') {
+    return null;
+  }
+  return UNDOABLE_TYPES.has(latest.type) ? latest : null;
+}
+
 /**
  * Reverse the latest non-undone financial transaction (Banker only).
  */
@@ -669,10 +688,15 @@ export function undoLastTransaction(room: RoomState, input: { actorId: string })
   const mortgages = getMortgagesMap(room);
   const transactions = getTransactionsMap(room);
 
-  const candidate = Object.values(transactions)
-    .filter((tx) => !tx.undone && UNDOABLE_TYPES.has(tx.type))
-    .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))[0];
+  const latest = getLatestNonUndoTransaction(room);
+  if (!latest) {
+    throw new LedgerError('NOTHING_TO_UNDO', 'There are no transactions left to undo.');
+  }
+  if (latest.type === 'bankrupt' || latest.type === 'remove') {
+    throw new LedgerError('CANNOT_UNDO', 'Cannot undo past a player bankruptcy or removal.');
+  }
 
+  const candidate = getLatestUndoableTransaction(room);
   if (!candidate) {
     throw new LedgerError('NOTHING_TO_UNDO', 'There are no transactions left to undo.');
   }

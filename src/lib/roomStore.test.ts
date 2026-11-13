@@ -170,6 +170,46 @@ describe('applyRoomTransactionCallback', () => {
     expect(res.value?.mortgages).toEqual({});
     expect(res.value?.transactions).toEqual({});
   });
+
+  it('normalizes an omitted players map ({ meta } without players) and non-record arrays', () => {
+    const fullRoom = makeRoom();
+    const snapshotWithoutPlayers = {
+      meta: fullRoom.meta,
+    };
+
+    const res = applyRoomTransactionCallback(snapshotWithoutPlayers, (current) => {
+      expect(current.players).toEqual({});
+      expect(current.mortgages).toEqual({});
+      expect(current.transactions).toEqual({});
+      return joinOrReclaimPlayer(current, {
+        playerId: 'p-raj',
+        name: 'Raj',
+      }).room;
+    });
+
+    expect(res.commit).toBe(true);
+    expect(res.error).toBeUndefined();
+    expect(res.value?.players['p-raj']).toMatchObject({
+      id: 'p-raj',
+      name: 'Raj',
+      balance: 15000,
+      status: 'active',
+    });
+
+    const snapshotWithArrays = {
+      meta: fullRoom.meta,
+      players: [],
+      mortgages: [],
+      transactions: [],
+    };
+    const arrayRes = applyRoomTransactionCallback(snapshotWithArrays, (current) => {
+      expect(current.players).toEqual({});
+      expect(current.mortgages).toEqual({});
+      expect(current.transactions).toEqual({});
+      return current;
+    });
+    expect(arrayRes.commit).toBe(true);
+  });
 });
 
 describe('firebase config & unconfigured store guards', () => {

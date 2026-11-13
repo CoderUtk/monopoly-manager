@@ -120,10 +120,27 @@ export function TableView({
           {isNegative && (
             <span className={debtHeadroom <= 0 ? 'pill pill-danger' : 'pill pill-warning'}>
               <AlertTriangle size={14} aria-hidden="true" />
-              <span className="tabular-nums">
-                {debtHeadroom <= 0
-                  ? `At -${formatCurrency(negativeLimit, currencySymbol, currencyLocale)} limit`
-                  : `${formatCurrency(debtHeadroom, currencySymbol, currencyLocale)} left before -${formatCurrency(negativeLimit, currencySymbol, currencyLocale)} limit`}
+              <span>
+                {debtHeadroom <= 0 ? (
+                  <>
+                    At{' '}
+                    <span className="tabular-nums">
+                      {formatCurrency(-negativeLimit, currencySymbol, currencyLocale)}
+                    </span>{' '}
+                    limit
+                  </>
+                ) : (
+                  <>
+                    <span className="tabular-nums">
+                      {formatCurrency(debtHeadroom, currencySymbol, currencyLocale)}
+                    </span>{' '}
+                    left before{' '}
+                    <span className="tabular-nums">
+                      {formatCurrency(-negativeLimit, currencySymbol, currencyLocale)}
+                    </span>{' '}
+                    limit
+                  </>
+                )}
               </span>
             </span>
           )}

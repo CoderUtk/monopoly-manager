@@ -162,6 +162,21 @@
   display: none;
 }
 
+.ledger-details-summary svg {
+  flex-shrink: 0;
+  transition: transform var(--dur-micro) var(--ease-out);
+}
+
+details[open] .ledger-details-summary svg {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ledger-details-summary svg {
+    transition: none;
+  }
+}
+
 /* History Rows */
 .history-row {
   display: flex;

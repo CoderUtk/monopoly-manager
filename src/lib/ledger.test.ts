@@ -10,6 +10,7 @@ import {
   clearMortgage,
   markPlayerExit,
   reassignBanker,
+  getLatestUndoableTransaction,
   undoLastTransaction,
 } from './ledger';
 import type { RoomState } from '../types/game';
@@ -470,55 +471,7 @@ describe('undoLastTransaction', () => {
   });
 
   it('rejects undo if reversing would push former recipient below -negativeLimit', () => {
-    let room = makeRoomWithPlayers(); // startingCash 15000, negativeLimit 5000
-    // Raj receives 3000 from BANK -> balance 18000
-    room = applyPayment(room, {
-      fromId: 'BANK',
-      toId: 'p-raj',
-      amount: 3000,
-      actorId: 'p-creator',
-      type: 'bank_pay',
-    });
-    // Wait: if Raj sends 22000 to Priya -> Raj balance becomes -4000
-    room = applyPayment(room, {
-      fromId: 'p-raj',
-      toId: 'p-priya',
-      amount: 22000,
-      actorId: 'p-raj',
-    });
-    // Now Priya pays Creator 19000 -> Priya has 15000 + 22000 - 19000 = 18000,
-    // wait: instead let Priya have -4000 by paying Creator 41000? Min is -5000.
-    // Let's undo the Raj->Priya transfer after Priya spends down to -4000:
-    // Priya has 37000; pay Creator 41000 -> Priya balance = -4000
-    room = applyPayment(room, {
-      fromId: 'p-priya',
-      toId: 'p-creator',
-      amount: 41000,
-      actorId: 'p-priya',
-    });
-    // Undo latest tx (Priya -> Creator 41000) works? Wait: Creator has 56000, so undoing that works.
-    // To test rejecting undo directly:
-    // Fresh setup where last tx is BANK -> Raj 3000? No, if Raj spent it, that spend would be last tx.
-    // When CAN last tx push former recipient below -negativeLimit?
-    // When Player A pays Player B 10000, then Banker marks something else? No:
-    // Or in a room where Player B already spent in an earlier step? No, if A->B is last tx, B just received 10000 so B >= -negativeLimit + 10000.
-    // Wait: what if `negativeLimit` was 0 and B was at -500? No, B can't be below -negativeLimit.
-    // WAIT: When CAN reversing the latest non-undone tx push former recipient below -negativeLimit?!
-    // Scenario:
-    // 1. Raj pays Priya 5000 (Priya = 20000)
-    // 2. Priya pays Creator 22000 (Priya = -2000)
-    // 3. Banker undoes tx #2? No, if Banker already undoes tx #2 then Priya = 20000.
-    // Wait: what if Raj pays Priya 5000, then Priya pays Creator 22000, and tx #2 was ALREADY undone? No, undoing tx #2 puts Priya back to 20000!
-    // What if Priya goes bankrupt? No, that marks Priya bankrupt.
-    // WAIT: Suppose Creator had -4000 (from earlier), Priya pays Creator 3000... no, Creator just received 3000 so Creator has -1000, undoing puts Creator back to -4000 which is >= -5000!
-    // Think! Mathematically, if tx T is the VERY LAST balance-changing transaction on B, and before T, B's balance was B_before >= -negativeLimit, then after T, B's balance is B_before + delta. Reversing T gives B_before, which was ALREADY >= -negativeLimit!
-    // Wait: how COULD reversing a tx push B below -negativeLimit?
-    // Case A: B had a SUBSEQUENT debit that wasn't undone, e.g., if `undo` skips a `bankrupt`/`remove`? No.
-    // Case B: What if `transactions` has an older tx after `undo`? No, `undo` only skips already-undone txs, and every subsequent non-undone tx would be undone first.
-    // Case C: What if a test constructs a RoomState or tests `undoLastTransaction` on a room where recipient balance is lower (e.g., due to `clearMortgage` or concurrent/manual state or if `reversesTxId` is checked, OR wait: what if `tx1` is `mortgage` (+5000), `tx2` is `transfer` (player spends 18000 -> -3000)... no, tx2 is last).
-    // Wait: what if `tx1` is `transfer` A -> B 10000, and `tx2` is `transfer` B -> C 20000, and `tx2` was undone? No, undoing tx2 restores B's 20000.
-    // What if in a test, B's balance is manually set (or negativeLimit was lowered, or B has balance -4000 when last tx was B receiving 5000)?
-    // Let's check! If a test tests the invariant directly (e.g. constructing/modifying state or testing concurrent-like state where recipient balance is -4000 and last tx credited 5000 -> -9000 < -5000), our guard MUST catch it and throw `LedgerError`!
+    const room = makeRoomWithPlayers(); // startingCash 15000, negativeLimit 5000
     const directState: RoomState = {
       ...room,
       players: {
@@ -545,5 +498,62 @@ describe('undoLastTransaction', () => {
     ).toThrow(LedgerError);
     expect(directState.transactions['tx-1'].undone).toBe(false);
     expect(directState.players['p-raj'].balance).toBe(-4000);
+  });
+
+  it('blocks undo past a player bankruptcy or removal and leaves state untouched', () => {
+    for (const exitStatus of ['bankrupt', 'removed'] as const) {
+      let room = makeRoomWithPlayers();
+      room = issueMortgage(room, {
+        playerId: 'p-priya',
+        propertyName: 'Kolkata',
+        principal: 1000,
+        actorId: 'p-creator',
+      });
+      const priyaMortgageId = Object.keys(room.mortgages)[0];
+
+      room = applyPayment(room, {
+        fromId: 'p-raj',
+        toId: 'p-priya',
+        amount: 2000,
+        actorId: 'p-raj',
+      });
+
+      room = markPlayerExit(room, {
+        targetPlayerId: 'p-raj',
+        status: exitStatus,
+        actorId: 'p-creator',
+      });
+
+      expect(getLatestUndoableTransaction(room)).toBeNull();
+
+      const snapshotBefore = structuredClone(room);
+      expect(() =>
+        undoLastTransaction(room, { actorId: 'p-creator' })
+      ).toThrowError(
+        new LedgerError('CANNOT_UNDO', 'Cannot undo past a player bankruptcy or removal.')
+      );
+      expect(room).toEqual(snapshotBefore);
+      expect(room.players['p-priya'].balance).toBe(18000);
+      expect(room.mortgages[priyaMortgageId].active).toBe(true);
+
+      // A subsequent financial transaction after the exit can be undone, then hits the barrier again
+      const afterPostExitPay = applyPayment(room, {
+        fromId: 'BANK',
+        toId: 'p-priya',
+        amount: 500,
+        actorId: 'p-creator',
+        type: 'bank_pay',
+      });
+      expect(getLatestUndoableTransaction(afterPostExitPay)?.type).toBe('bank_pay');
+
+      const afterUndoPostExit = undoLastTransaction(afterPostExitPay, { actorId: 'p-creator' });
+      expect(afterUndoPostExit.players['p-priya'].balance).toBe(18000);
+      expect(getLatestUndoableTransaction(afterUndoPostExit)).toBeNull();
+      expect(() =>
+        undoLastTransaction(afterUndoPostExit, { actorId: 'p-creator' })
+      ).toThrowError(
+        new LedgerError('CANNOT_UNDO', 'Cannot undo past a player bankruptcy or removal.')
+      );
+    }
   });
 });
