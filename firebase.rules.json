@@ -1,0 +1,47 @@
+{
+  "rules": {
+    "rooms": {
+      "$roomCode": {
+        ".read": true,
+        ".write": true,
+        "meta": {
+          ".validate": "newData.hasChildren(['code', 'startingCash', 'negativeLimit', 'passStartAmount', 'mortgageInterestPct'])",
+          "code": {
+            ".validate": "newData.isString() && newData.val().length === 6"
+          },
+          "startingCash": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && (newData.val() % 1 === 0)"
+          },
+          "negativeLimit": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && (newData.val() % 1 === 0)"
+          },
+          "passStartAmount": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && (newData.val() % 1 === 0)"
+          },
+          "mortgageInterestPct": {
+            ".validate": "newData.val() === 0 || newData.val() === 10"
+          }
+        },
+        "players": {
+          "$playerId": {
+            ".validate": "newData.hasChildren(['id', 'name', 'balance', 'status'])",
+            "balance": {
+              ".validate": "newData.isNumber() && (newData.parent().child('status').val() !== 'active' || (!newData.parent().parent().parent().child('meta').child('negativeLimit').exists() && !root.child('rooms').child($roomCode).child('meta').child('negativeLimit').exists()) || (newData.parent().parent().parent().child('meta').child('negativeLimit').exists() ? newData.val() >= -newData.parent().parent().parent().child('meta').child('negativeLimit').val() : newData.val() >= -root.child('rooms').child($roomCode).child('meta').child('negativeLimit').val()))"
+            },
+            "status": {
+              ".validate": "newData.val() === 'active' || newData.val() === 'bankrupt' || newData.val() === 'removed'"
+            }
+          }
+        },
+        "transactions": {
+          "$txId": {
+            ".validate": "newData.hasChildren(['id', 'type', 'fromId', 'toId', 'amount'])",
+            "amount": {
+              ".validate": "newData.isNumber() && newData.val() >= 0"
+            }
+          }
+        }
+      }
+    }
+  }
+}
