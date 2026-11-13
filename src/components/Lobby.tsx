@@ -15,6 +15,7 @@ import {
   reclaimSeat,
 } from '../lib/roomStore';
 import { formatCurrency } from '../lib/format';
+import { MAX_PLAYERS } from '../lib/ledger';
 import { createLocalPlayerId, getRoomCodeFromUrl } from '../lib/session';
 import './Lobby.css';
 
@@ -85,6 +86,7 @@ export function Lobby({ onEnterRoom }: LobbyProps) {
   const [currencyPreset, setCurrencyPreset] = useState<CurrencyPresetId>('inr');
   const [customCurrency, setCustomCurrency] = useState('');
   const [startingCashInput, setStartingCashInput] = useState('15000');
+  const [bankStartingCashInput, setBankStartingCashInput] = useState('100000');
   const [negativeLimitInput, setNegativeLimitInput] = useState('5000');
   const [passStartInput, setPassStartInput] = useState('2000');
   const [mortgageInterestPct, setMortgageInterestPct] = useState<0 | 10>(10);
@@ -313,6 +315,15 @@ export function Lobby({ onEnterRoom }: LobbyProps) {
       return;
     }
 
+    const bankStartingCash = parseNonNegativeWholeNumber(
+      bankStartingCashInput,
+      'Bank starting balance'
+    );
+    if (!bankStartingCash.ok) {
+      setCreateError(bankStartingCash.error);
+      return;
+    }
+
     const negativeLimit = parseNonNegativeWholeNumber(
       negativeLimitInput,
       'Negative balance limit'
@@ -335,6 +346,7 @@ export function Lobby({ onEnterRoom }: LobbyProps) {
       currencySymbol,
       currencyLocale,
       startingCash: startingCash.value,
+      bankStartingCash: bankStartingCash.value,
       negativeLimit: negativeLimit.value,
       passStartAmount: passStartAmount.value,
       mortgageInterestPct,
@@ -484,59 +496,90 @@ export function Lobby({ onEnterRoom }: LobbyProps) {
                     </dd>
                   </div>
                   <div className="lobby-meta-item">
+                    <dt>Bank balance</dt>
+                    <dd className="tabular-nums">
+                      {formatCurrency(
+                        foundRoom.meta.bankBalance,
+                        foundRoom.meta.currencySymbol,
+                        foundRoom.meta.currencyLocale
+                      )}
+                    </dd>
+                  </div>
+                  <div className="lobby-meta-item">
+                    <dt>Players</dt>
+                    <dd className="tabular-nums">
+                      {seats.length} / {MAX_PLAYERS}
+                    </dd>
+                  </div>
+                  <div className="lobby-meta-item">
                     <dt>Mortgage interest</dt>
                     <dd className="tabular-nums">{foundRoom.meta.mortgageInterestPct}%</dd>
                   </div>
                 </dl>
               </div>
 
-              <form className="lobby-divider stack-sm" onSubmit={handleJoinGame} noValidate>
-                <div className="field">
-                  <label htmlFor="lobby-join-name" className="field-label">
-                    Join as a new player
-                  </label>
-                  <input
-                    id="lobby-join-name"
-                    type="text"
-                    className="input"
-                    value={joinName}
-                    onChange={(event) => {
-                      setJoinName(event.target.value);
-                      setJoinError(null);
-                    }}
-                    placeholder="Enter your name"
-                    maxLength={MAX_NAME_LENGTH}
-                    autoComplete="nickname"
-                    disabled={joinBusy}
-                  />
+              {foundRoom.meta.status === 'active' || seats.length >= MAX_PLAYERS ? (
+                <div className="lobby-divider stack-xs">
+                  <h3>
+                    {foundRoom.meta.status === 'active'
+                      ? 'Game already in progress'
+                      : `Room full (${seats.length}/${MAX_PLAYERS})`}
+                  </h3>
+                  <p className="text-sm text-muted">
+                    {foundRoom.meta.status === 'active'
+                      ? 'New players cannot join after start. Reclaim an existing seat below.'
+                      : 'Maximum players reached. Reclaim an existing seat below.'}
+                  </p>
                 </div>
-
-                {duplicatePlayer && (
-                  <div className="lobby-error" role="alert">
-                    <AlertTriangle size={18} aria-hidden="true" />
-                    <span>
-                      &ldquo;{duplicatePlayer.name}&rdquo; is already in this room. Tap Reclaim seat
-                      below instead.
-                    </span>
+              ) : (
+                <form className="lobby-divider stack-sm" onSubmit={handleJoinGame} noValidate>
+                  <div className="field">
+                    <label htmlFor="lobby-join-name" className="field-label">
+                      Join as a new player
+                    </label>
+                    <input
+                      id="lobby-join-name"
+                      type="text"
+                      className="input"
+                      value={joinName}
+                      onChange={(event) => {
+                        setJoinName(event.target.value);
+                        setJoinError(null);
+                      }}
+                      placeholder="Enter your name"
+                      maxLength={MAX_NAME_LENGTH}
+                      autoComplete="nickname"
+                      disabled={joinBusy}
+                    />
                   </div>
-                )}
 
-                {joinError && !duplicatePlayer && (
-                  <div className="lobby-error" role="alert">
-                    <AlertTriangle size={18} aria-hidden="true" />
-                    <span>{joinError}</span>
-                  </div>
-                )}
+                  {duplicatePlayer && (
+                    <div className="lobby-error" role="alert">
+                      <AlertTriangle size={18} aria-hidden="true" />
+                      <span>
+                        &ldquo;{duplicatePlayer.name}&rdquo; is already in this room. Tap Reclaim seat
+                        below instead.
+                      </span>
+                    </div>
+                  )}
 
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={joinBusy || Boolean(duplicatePlayer)}
-                >
-                  <ArrowRight size={18} aria-hidden="true" />
-                  <span>{joinLoading ? 'Joining...' : 'Join game'}</span>
-                </button>
-              </form>
+                  {joinError && !duplicatePlayer && (
+                    <div className="lobby-error" role="alert">
+                      <AlertTriangle size={18} aria-hidden="true" />
+                      <span>{joinError}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={joinBusy || Boolean(duplicatePlayer)}
+                  >
+                    <ArrowRight size={18} aria-hidden="true" />
+                    <span>{joinLoading ? 'Joining...' : 'Join room'}</span>
+                  </button>
+                </form>
+              )}
 
               <div className="lobby-divider stack-sm">
                 <div className="stack-xs">
@@ -613,7 +656,7 @@ export function Lobby({ onEnterRoom }: LobbyProps) {
                 setCreatorName(event.target.value);
                 setCreateError(null);
               }}
-              placeholder="You will start as Banker"
+              placeholder="Enter your name"
               maxLength={MAX_NAME_LENGTH}
               autoComplete="nickname"
               disabled={createLoading}
@@ -693,7 +736,7 @@ export function Lobby({ onEnterRoom }: LobbyProps) {
           <div className="lobby-rules-grid">
             <div className="field">
               <label htmlFor="lobby-starting-cash" className="field-label">
-                Starting cash
+                Player starting cash
               </label>
               <input
                 id="lobby-starting-cash"
@@ -705,6 +748,26 @@ export function Lobby({ onEnterRoom }: LobbyProps) {
                 value={startingCashInput}
                 onChange={(event) => {
                   setStartingCashInput(event.target.value);
+                  setCreateError(null);
+                }}
+                disabled={createLoading}
+              />
+            </div>
+
+            <div className="field">
+              <label htmlFor="lobby-bank-starting-cash" className="field-label">
+                Bank starting balance
+              </label>
+              <input
+                id="lobby-bank-starting-cash"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={1}
+                className="input tabular-nums"
+                value={bankStartingCashInput}
+                onChange={(event) => {
+                  setBankStartingCashInput(event.target.value);
                   setCreateError(null);
                 }}
                 disabled={createLoading}

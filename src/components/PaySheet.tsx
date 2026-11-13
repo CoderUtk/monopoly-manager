@@ -200,10 +200,13 @@ export function PaySheet({
   const amount = amountStr ? Number(amountStr) : 0;
   const selectedRecipient = recipients.find((option) => option.id === recipientId) ?? null;
 
-  const { currencySymbol, currencyLocale, negativeLimit } = room.meta;
+  const { currencySymbol, currencyLocale, negativeLimit, bankBalance } = room.meta;
   const formattedAmount = formatCurrency(amount, currencySymbol, currencyLocale);
   const projectedSenderBalance = me.balance - amount;
+  const projectedBankBalance = bankBalance - amount;
   const isOverdraft = mode === 'player_pay' && amount > 0 && projectedSenderBalance < -negativeLimit;
+  const isBankInsufficient = mode === 'bank_pay' && amount > 0 && amount > bankBalance;
+  const bankShortfall = isBankInsufficient ? amount - bankBalance : 0;
   const overdraftExcess = isOverdraft ? -negativeLimit - projectedSenderBalance : 0;
   const remainingHeadroom =
     mode === 'player_pay' && projectedSenderBalance < 0 && !isOverdraft
@@ -217,7 +220,8 @@ export function PaySheet({
     Boolean(selectedRecipient) &&
     Number.isInteger(amount) &&
     amount > 0 &&
-    !isOverdraft;
+    !isOverdraft &&
+    !isBankInsufficient;
 
   function handleAddChip(chipValue: number) {
     if (submitting) {
@@ -428,24 +432,49 @@ export function PaySheet({
               )}
             </>
           ) : (
-            selectedRecipient?.player && (
+            <>
               <div className="row-between text-sm">
-                <span className="text-muted">{selectedRecipient.player.name} after payout</span>
-                <strong className="tabular-nums text-success">
-                  {formatCurrency(
-                    selectedRecipient.player.balance,
-                    currencySymbol,
-                    currencyLocale
-                  )}{' '}
-                  →{' '}
-                  {formatCurrency(
-                    selectedRecipient.player.balance + amount,
-                    currencySymbol,
-                    currencyLocale
-                  )}
+                <span className="text-muted">Bank balance after payout</span>
+                <strong
+                  className={
+                    isBankInsufficient ? 'tabular-nums text-danger' : 'tabular-nums'
+                  }
+                >
+                  {formatCurrency(bankBalance, currencySymbol, currencyLocale)} →{' '}
+                  {formatCurrency(projectedBankBalance, currencySymbol, currencyLocale)}
                 </strong>
               </div>
-            )
+              {selectedRecipient?.player && (
+                <div className="row-between text-sm">
+                  <span className="text-muted">{selectedRecipient.player.name} after payout</span>
+                  <strong className="tabular-nums text-success">
+                    {formatCurrency(
+                      selectedRecipient.player.balance,
+                      currencySymbol,
+                      currencyLocale
+                    )}{' '}
+                    →{' '}
+                    {formatCurrency(
+                      selectedRecipient.player.balance + amount,
+                      currencySymbol,
+                      currencyLocale
+                    )}
+                  </strong>
+                </div>
+              )}
+              {isBankInsufficient && (
+                <div className="table-inline-alert" role="alert">
+                  <AlertTriangle size={16} aria-hidden="true" />
+                  <span>
+                    Exceeds Bank balance by{' '}
+                    <span className="tabular-nums">
+                      {formatCurrency(bankShortfall, currencySymbol, currencyLocale)}
+                    </span>
+                    .
+                  </span>
+                </div>
+              )}
+            </>
           )}
         </div>
 

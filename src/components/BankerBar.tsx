@@ -83,11 +83,10 @@ export function BankerBar({
   const [error, setError] = useState<string | null>(null);
 
   const isBanker = me.id === room.meta.bankerId && me.status === 'active';
-  const isCreator = me.id === room.meta.creatorId && me.status === 'active';
   const currentBanker = room.players[room.meta.bankerId];
   const needsEmergencyClaim =
     !isBanker &&
-    isCreator &&
+    me.status === 'active' &&
     (!currentBanker || currentBanker.status !== 'active');
 
   const activePlayers = useMemo(
@@ -152,7 +151,7 @@ export function BankerBar({
     }
   }
 
-  if (!isBanker && !isCreator) {
+  if (!isBanker && !needsEmergencyClaim) {
     return null;
   }
 
@@ -210,52 +209,42 @@ export function BankerBar({
     );
   }
 
-  if (!isBanker && isCreator) {
+  if (!isBanker && needsEmergencyClaim) {
     return (
-      <section
-        className="panel stack-sm"
-        aria-label={needsEmergencyClaim ? 'Banker recovery' : 'Reassign Banker'}
-      >
+      <section className="panel stack-sm" aria-label="Banker recovery">
         <div className="row-between">
           <div className="row">
             <ShieldCheck size={20} aria-hidden="true" />
-            <h2>{needsEmergencyClaim ? 'Banker unassigned' : 'Reassign Banker'}</h2>
+            <h2>Banker unassigned</h2>
           </div>
-          <span className={needsEmergencyClaim ? 'pill pill-warning' : 'pill'}>
-            {needsEmergencyClaim ? 'Creator recovery' : 'Creator'}
-          </span>
+          <span className="pill pill-warning">Recovery</span>
         </div>
 
         <p className="text-sm text-muted">
-          {needsEmergencyClaim
-            ? 'The current Banker is inactive. As room creator, you can claim or reassign the Banker role to keep Bank payouts and undo available.'
-            : `Current Banker: ${currentBanker?.name ?? 'Active player'}. As room creator, you can reassign the Banker role at any time.`}
+          The current Banker is inactive. Any active player can claim or assign a new Banker to
+          keep Bank payouts and undo available.
         </p>
 
-        {needsEmergencyClaim && (
-          <div>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={busyAction !== null}
-              onClick={() =>
-                runBankerMutation('claim', (latestRoom) =>
-                  reassignBanker(latestRoom, {
-                    newBankerId: me.id,
-                    actorId: me.id,
-                  })
-                )
-              }
-            >
-              <ShieldCheck size={18} aria-hidden="true" />
-              <span>{busyAction === 'claim' ? 'Claiming...' : 'Claim Banker'}</span>
-            </button>
-          </div>
-        )}
-
-        <div className={needsEmergencyClaim ? 'table-divider' : undefined}>
-          {renderReassignBankerControl(needsEmergencyClaim)}
+        <div>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={busyAction !== null}
+            onClick={() =>
+              runBankerMutation('claim', (latestRoom) =>
+                reassignBanker(latestRoom, {
+                  newBankerId: me.id,
+                  actorId: me.id,
+                })
+              )
+            }
+          >
+            <ShieldCheck size={18} aria-hidden="true" />
+            <span>{busyAction === 'claim' ? 'Claiming...' : 'Claim Banker'}</span>
+          </button>
         </div>
+
+        <div className="table-divider">{renderReassignBankerControl(true)}</div>
 
         {error && (
           <div className="table-inline-alert" role="alert">
@@ -272,6 +261,8 @@ export function BankerBar({
     room.meta.currencySymbol,
     room.meta.currencyLocale
   );
+  const insufficientForPassStart =
+    room.meta.passStartAmount > 0 && room.meta.bankBalance < room.meta.passStartAmount;
   const manageTarget = activePlayers.find((player) => player.id === manageTargetId) ?? null;
 
   return (
@@ -311,7 +302,8 @@ export function BankerBar({
             disabled={
               busyAction !== null ||
               !passStartTargetId ||
-              room.meta.passStartAmount <= 0
+              room.meta.passStartAmount <= 0 ||
+              insufficientForPassStart
             }
             onClick={() =>
               runBankerMutation('pass_start', (latestRoom) =>
@@ -333,6 +325,11 @@ export function BankerBar({
         </div>
         {room.meta.passStartAmount <= 0 && (
           <p className="text-xs text-muted">Pass Start is disabled (set to 0 in room rules).</p>
+        )}
+        {insufficientForPassStart && (
+          <p className="text-xs text-danger">
+            Bank balance is below Pass Start amount ({passStartFormatted}).
+          </p>
         )}
       </div>
 

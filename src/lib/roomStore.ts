@@ -40,7 +40,12 @@ function normalizeRoomState(raw: unknown): RoomState | null {
   }
 
   return {
-    meta: candidate.meta,
+    meta: {
+      ...candidate.meta,
+      status: candidate.meta.status ?? 'active',
+      bankStartingCash: candidate.meta.bankStartingCash ?? 0,
+      bankBalance: candidate.meta.bankBalance ?? 0,
+    },
     players: normalizeRecordMap(candidate.players),
     mortgages: normalizeRecordMap(candidate.mortgages),
     transactions: normalizeRecordMap(candidate.transactions),

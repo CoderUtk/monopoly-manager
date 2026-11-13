@@ -9,6 +9,7 @@ import type {
 
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ROOM_CODE_LENGTH = 6;
+export const MAX_PLAYERS = 4;
 const MAX_PLAYER_NAME_LENGTH = 20;
 const MAX_PROPERTY_NAME_LENGTH = 40;
 const UNDOABLE_TYPES: ReadonlySet<TransactionType> = new Set([
@@ -189,8 +190,23 @@ function assertWithinNegativeLimit(
   }
 }
 
+function assertBankHasFunds(room: RoomState, amount: number): void {
+  if (room.meta.bankBalance < amount) {
+    throw new LedgerError(
+      'BANK_INSUFFICIENT_FUNDS',
+      'Bank does not have enough balance for this payout.'
+    );
+  }
+}
+
+function requireActiveGame(room: RoomState): void {
+  if (room.meta.status !== 'active') {
+    throw new LedgerError('GAME_NOT_STARTED', 'Choose a Banker and start the game first.');
+  }
+}
+
 /**
- * Create a brand-new room with the creator seated as the initial active Banker.
+ * Create a brand-new room in lobby state (awaiting players and Banker selection).
  */
 export function createInitialRoom(input: CreateRoomInput): RoomState {
   const creatorName = normalizePlayerName(input.creatorName);
@@ -203,6 +219,11 @@ export function createInitialRoom(input: CreateRoomInput): RoomState {
     input.startingCash,
     'INVALID_STARTING_CASH',
     'Starting cash'
+  );
+  const bankStartingCash = assertNonNegativeInteger(
+    input.bankStartingCash,
+    'INVALID_BANK_STARTING_CASH',
+    'Bank starting balance'
   );
   const negativeLimit = assertNonNegativeInteger(
     input.negativeLimit,
@@ -233,10 +254,13 @@ export function createInitialRoom(input: CreateRoomInput): RoomState {
       code,
       createdAt: now,
       creatorId,
-      bankerId: creatorId,
+      bankerId: '',
+      status: 'lobby',
       currencySymbol,
       currencyLocale,
       startingCash,
+      bankStartingCash,
+      bankBalance: bankStartingCash,
       negativeLimit,
       passStartAmount,
       mortgageInterestPct: input.mortgageInterestPct,
@@ -256,7 +280,7 @@ export function createInitialRoom(input: CreateRoomInput): RoomState {
 }
 
 /**
- * Add a new player seat or reclaim an existing seat without modifying balances.
+ * Add a new player seat (lobby only, up to 4 players) or reclaim an existing seat.
  */
 export function joinOrReclaimPlayer(
   room: RoomState,
@@ -273,6 +297,18 @@ export function joinOrReclaimPlayer(
       throw new LedgerError('PLAYER_REMOVED', `${existing.name} was removed and cannot be reclaimed.`);
     }
     return { room, playerId: existing.id };
+  }
+
+  if (room.meta.status !== 'lobby') {
+    throw new LedgerError(
+      'GAME_ALREADY_STARTED',
+      'This game has already started. Use Reclaim Seat to resume an existing player.'
+    );
+  }
+
+  const activeSeatCount = Object.values(players).filter((p) => p.status !== 'removed').length;
+  if (activeSeatCount >= MAX_PLAYERS) {
+    throw new LedgerError('ROOM_FULL', `Room is full (maximum ${MAX_PLAYERS} players).`);
   }
 
   const trimmedName = normalizePlayerName(input.name);
@@ -316,6 +352,57 @@ export function joinOrReclaimPlayer(
 }
 
 /**
+ * Select which joined active player will be Banker while still in lobby (any active player).
+ */
+export function selectLobbyBanker(
+  room: RoomState,
+  input: { bankerId: string; actorId: string }
+): RoomState {
+  if (room.meta.status !== 'lobby') {
+    throw new LedgerError('GAME_ALREADY_STARTED', 'Use Reassign Banker once the game has started.');
+  }
+  const players = getPlayersMap(room);
+  requireActivePlayer(players, input.actorId, 'Actor');
+  const chosen = requireActivePlayer(players, input.bankerId, 'Selected Banker');
+
+  return {
+    ...room,
+    meta: {
+      ...room.meta,
+      bankerId: chosen.id,
+    },
+  };
+}
+
+/**
+ * Lock in Banker (optional override) and transition room from lobby to active play (any active player).
+ */
+export function startGame(
+  room: RoomState,
+  input: { actorId: string; bankerId?: string }
+): RoomState {
+  if (room.meta.status !== 'lobby') {
+    throw new LedgerError('GAME_ALREADY_STARTED', 'Game has already started.');
+  }
+  const players = getPlayersMap(room);
+  requireActivePlayer(players, input.actorId, 'Actor');
+  const chosenBankerId = input.bankerId?.trim() || room.meta.bankerId;
+  if (!chosenBankerId) {
+    throw new LedgerError('BANKER_REQUIRED', 'Choose a Banker before starting the game.');
+  }
+  const banker = requireActivePlayer(players, chosenBankerId, 'Banker');
+
+  return {
+    ...room,
+    meta: {
+      ...room.meta,
+      bankerId: banker.id,
+      status: 'active',
+    },
+  };
+}
+
+/**
  * Execute a direct player transfer, Bank payment, or Pass Start credit.
  */
 export function applyPayment(
@@ -329,6 +416,7 @@ export function applyPayment(
     type?: 'transfer' | 'bank_pay' | 'pass_start';
   }
 ): RoomState {
+  requireActiveGame(room);
   const type = input.type ?? 'transfer';
   const amount = assertPositiveInteger(input.amount, 'INVALID_AMOUNT', 'Payment amount');
 
@@ -345,6 +433,7 @@ export function applyPayment(
     if (input.fromId !== 'BANK' || input.toId === 'BANK') {
       throw new LedgerError('INVALID_BANK_PAYOUT', 'Bank payouts must go from Bank to an active player.');
     }
+    assertBankHasFunds(room, amount);
     const recipient = requireActivePlayer(players, input.toId, 'Recipient');
     const tx = createTransactionRecord({
       type,
@@ -358,6 +447,10 @@ export function applyPayment(
 
     return {
       ...room,
+      meta: {
+        ...room.meta,
+        bankBalance: room.meta.bankBalance - amount,
+      },
       players: {
         ...players,
         [recipient.id]: {
@@ -391,7 +484,10 @@ export function applyPayment(
     },
   };
 
-  if (input.toId !== 'BANK') {
+  let nextBankBalance = room.meta.bankBalance;
+  if (input.toId === 'BANK') {
+    nextBankBalance += amount;
+  } else {
     const recipient = requireActivePlayer(players, input.toId, 'Recipient');
     nextPlayers[recipient.id] = {
       ...recipient,
@@ -411,6 +507,10 @@ export function applyPayment(
 
   return {
     ...room,
+    meta: {
+      ...room.meta,
+      bankBalance: nextBankBalance,
+    },
     players: nextPlayers,
     transactions: {
       ...transactions,
@@ -426,6 +526,7 @@ export function issueMortgage(
   room: RoomState,
   input: { playerId: string; propertyName: string; principal: number; actorId: string }
 ): RoomState {
+  requireActiveGame(room);
   requireBanker(room, input.actorId);
   const players = getPlayersMap(room);
   const mortgages = getMortgagesMap(room);
@@ -440,6 +541,7 @@ export function issueMortgage(
     );
   }
   const principal = assertPositiveInteger(input.principal, 'INVALID_AMOUNT', 'Mortgage amount');
+  assertBankHasFunds(room, principal);
   const payoffAmount =
     room.meta.mortgageInterestPct === 10 ? Math.round(principal * 1.1) : principal;
   const now = nextTimestamp(room);
@@ -468,6 +570,10 @@ export function issueMortgage(
 
   return {
     ...room,
+    meta: {
+      ...room.meta,
+      bankBalance: room.meta.bankBalance - principal,
+    },
     players: {
       ...players,
       [player.id]: {
@@ -493,6 +599,7 @@ export function clearMortgage(
   room: RoomState,
   input: { mortgageId: string; actorId: string }
 ): RoomState {
+  requireActiveGame(room);
   requireBanker(room, input.actorId);
   const players = getPlayersMap(room);
   const mortgages = getMortgagesMap(room);
@@ -524,6 +631,10 @@ export function clearMortgage(
 
   return {
     ...room,
+    meta: {
+      ...room.meta,
+      bankBalance: room.meta.bankBalance + mortgage.payoffAmount,
+    },
     players: {
       ...players,
       [player.id]: {
@@ -553,6 +664,7 @@ export function markPlayerExit(
   room: RoomState,
   input: { targetPlayerId: string; status: 'bankrupt' | 'removed'; actorId: string }
 ): RoomState {
+  requireActiveGame(room);
   requireBanker(room, input.actorId);
   const players = getPlayersMap(room);
   const mortgages = getMortgagesMap(room);
@@ -583,17 +695,10 @@ export function markPlayerExit(
 
   let nextBankerId = room.meta.bankerId;
   if (target.id === room.meta.bankerId) {
-    const creator = nextPlayers[room.meta.creatorId];
-    if (creator && creator.status === 'active') {
-      nextBankerId = creator.id;
-    } else {
-      const nextActive = Object.values(nextPlayers)
-        .filter((p) => p.status === 'active')
-        .sort((a, b) => a.joinedAt - b.joinedAt || a.id.localeCompare(b.id))[0];
-      if (nextActive) {
-        nextBankerId = nextActive.id;
-      }
-    }
+    const nextActive = Object.values(nextPlayers)
+      .filter((p) => p.status === 'active')
+      .sort((a, b) => a.joinedAt - b.joinedAt || a.id.localeCompare(b.id))[0];
+    nextBankerId = nextActive ? nextActive.id : '';
   }
 
   const tx = createTransactionRecord({
@@ -621,20 +726,20 @@ export function markPlayerExit(
 }
 
 /**
- * Transfer the Banker role to any active player (allowed for current Banker or room Creator).
+ * Transfer the Banker role to any active player (current Banker, or any active player if Banker exited).
  */
 export function reassignBanker(
   room: RoomState,
   input: { newBankerId: string; actorId: string }
 ): RoomState {
-  if (input.actorId !== room.meta.bankerId && input.actorId !== room.meta.creatorId) {
-    throw new LedgerError(
-      'BANKER_REQUIRED',
-      'Only the current Banker or room Creator can reassign the Banker.'
-    );
-  }
   const players = getPlayersMap(room);
   requireActivePlayer(players, input.actorId, 'Actor');
+  const currentBanker = room.meta.bankerId ? players[room.meta.bankerId] : undefined;
+  const bankerActive = Boolean(currentBanker && currentBanker.status === 'active');
+
+  if (bankerActive && input.actorId !== room.meta.bankerId) {
+    throw new LedgerError('BANKER_REQUIRED', 'Only the current Banker can transfer the Banker role.');
+  }
   const nextBanker = requireActivePlayer(players, input.newBankerId, 'New Banker');
 
   return {
@@ -683,6 +788,7 @@ export function getLatestUndoableTransaction(room: RoomState): Transaction | nul
  * Reverse the latest non-undone financial transaction (Banker only).
  */
 export function undoLastTransaction(room: RoomState, input: { actorId: string }): RoomState {
+  requireActiveGame(room);
   requireBanker(room, input.actorId);
   const players = getPlayersMap(room);
   const mortgages = getMortgagesMap(room);
@@ -703,16 +809,16 @@ export function undoLastTransaction(room: RoomState, input: { actorId: string })
 
   const nextPlayers: Record<string, Player> = { ...players };
   const nextMortgages: Record<string, Mortgage> = { ...mortgages };
+  let nextBankBalance = room.meta.bankBalance;
   const now = nextTimestamp(room);
 
   switch (candidate.type) {
     case 'transfer': {
       const originalSender = requireActivePlayer(players, candidate.fromId, 'Original sender');
-      nextPlayers[originalSender.id] = {
-        ...originalSender,
-        balance: originalSender.balance + candidate.amount,
-      };
-      if (candidate.toId !== 'BANK') {
+      if (candidate.toId === 'BANK') {
+        assertBankHasFunds(room, candidate.amount);
+        nextBankBalance -= candidate.amount;
+      } else {
         const originalRecipient = requireActivePlayer(players, candidate.toId, 'Original recipient');
         const revertedBalance = originalRecipient.balance - candidate.amount;
         assertWithinNegativeLimit(originalRecipient, revertedBalance, room.meta.negativeLimit);
@@ -721,6 +827,10 @@ export function undoLastTransaction(room: RoomState, input: { actorId: string })
           balance: revertedBalance,
         };
       }
+      nextPlayers[originalSender.id] = {
+        ...originalSender,
+        balance: originalSender.balance + candidate.amount,
+      };
       break;
     }
 
@@ -733,6 +843,7 @@ export function undoLastTransaction(room: RoomState, input: { actorId: string })
         ...originalRecipient,
         balance: revertedBalance,
       };
+      nextBankBalance += candidate.amount;
       break;
     }
 
@@ -756,6 +867,7 @@ export function undoLastTransaction(room: RoomState, input: { actorId: string })
         active: false,
         clearedAt: now,
       };
+      nextBankBalance += candidate.amount;
       break;
     }
 
@@ -765,6 +877,7 @@ export function undoLastTransaction(room: RoomState, input: { actorId: string })
       if (!mortgage || mortgage.active) {
         throw new LedgerError('CANNOT_UNDO', 'This mortgage state cannot be restored.');
       }
+      assertBankHasFunds(room, candidate.amount);
       nextPlayers[player.id] = {
         ...player,
         balance: player.balance + candidate.amount,
@@ -774,6 +887,7 @@ export function undoLastTransaction(room: RoomState, input: { actorId: string })
         active: true,
         clearedAt: null,
       };
+      nextBankBalance -= candidate.amount;
       break;
     }
 
@@ -794,6 +908,10 @@ export function undoLastTransaction(room: RoomState, input: { actorId: string })
 
   return {
     ...room,
+    meta: {
+      ...room.meta,
+      bankBalance: nextBankBalance,
+    },
     players: nextPlayers,
     mortgages: nextMortgages,
     transactions: {

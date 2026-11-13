@@ -70,9 +70,16 @@ export function App() {
   const currentPlayer = session && room ? room.players[session.playerId] ?? null : null;
   const seatMissingOrRemoved =
     Boolean(session && room) && (!currentPlayer || currentPlayer.status === 'removed');
+  const isLobby = room?.meta.status === 'lobby';
 
   const showBottomNav = Boolean(
-    firebaseReady && session && !loading && !error && room && !seatMissingOrRemoved
+    firebaseReady &&
+      session &&
+      !loading &&
+      !error &&
+      room &&
+      !seatMissingOrRemoved &&
+      !isLobby
   );
 
   function handleEnterRoom(nextSession: LocalSession, nextRoom: RoomState) {
@@ -269,7 +276,7 @@ export function App() {
 
           {firebaseReady && session && !loading && !error && room && currentPlayer && !seatMissingOrRemoved && (
             <>
-              {activeTab === 'table' && (
+              {(isLobby || activeTab === 'table') && (
                 <TableView
                   room={room}
                   playerId={currentPlayer.id}
@@ -277,11 +284,11 @@ export function App() {
                 />
               )}
 
-              {activeTab === 'mortgages' && (
+              {!isLobby && activeTab === 'mortgages' && (
                 <MortgagesView room={room} playerId={currentPlayer.id} />
               )}
 
-              {activeTab === 'history' && (
+              {!isLobby && activeTab === 'history' && (
                 <HistoryView room={room} playerId={currentPlayer.id} />
               )}
             </>

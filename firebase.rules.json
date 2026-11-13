@@ -5,11 +5,23 @@
         ".read": true,
         ".write": true,
         "meta": {
-          ".validate": "newData.hasChildren(['code', 'startingCash', 'negativeLimit', 'passStartAmount', 'mortgageInterestPct'])",
+          ".validate": "newData.hasChildren(['code', 'status', 'startingCash', 'bankStartingCash', 'bankBalance', 'negativeLimit', 'passStartAmount', 'mortgageInterestPct'])",
           "code": {
             ".validate": "newData.isString() && newData.val().length === 6"
           },
+          "status": {
+            ".validate": "newData.val() === 'lobby' || newData.val() === 'active'"
+          },
+          "bankerId": {
+            ".validate": "newData.isString()"
+          },
           "startingCash": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && (newData.val() % 1 === 0)"
+          },
+          "bankStartingCash": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && (newData.val() % 1 === 0)"
+          },
+          "bankBalance": {
             ".validate": "newData.isNumber() && newData.val() >= 0 && (newData.val() % 1 === 0)"
           },
           "negativeLimit": {

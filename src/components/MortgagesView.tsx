@@ -95,8 +95,9 @@ export function MortgagesView({ room, playerId }: MortgagesViewProps) {
     };
   }, [room.mortgages, room.transactions]);
 
-  const { currencySymbol, currencyLocale, mortgageInterestPct } = room.meta;
+  const { currencySymbol, currencyLocale, mortgageInterestPct, bankBalance } = room.meta;
   const parsedPrincipal = parsePositiveWholeNumber(principalInput);
+  const isBankInsufficient = parsedPrincipal !== null && parsedPrincipal > bankBalance;
   const previewPayoff =
     parsedPrincipal !== null
       ? mortgageInterestPct === 10
@@ -255,6 +256,13 @@ export function MortgagesView({ room, playerId }: MortgagesViewProps) {
             </div>
 
             <div className="mortgage-preview-row">
+              <span className="text-sm text-muted">Bank balance available</span>
+              <span className="text-sm tabular-nums">
+                {formatCurrency(bankBalance, currencySymbol, currencyLocale)}
+              </span>
+            </div>
+
+            <div className="mortgage-preview-row">
               <span className="text-sm text-muted">
                 Payoff to clear ({mortgageInterestPct === 10 ? '+10% interest' : '0% interest'})
               </span>
@@ -264,6 +272,16 @@ export function MortgagesView({ room, playerId }: MortgagesViewProps) {
                   : '—'}
               </span>
             </div>
+
+            {isBankInsufficient && (
+              <div className="ledger-inline-alert" role="alert">
+                <AlertTriangle size={16} aria-hidden="true" />
+                <span>
+                  Payout exceeds available Bank balance (
+                  {formatCurrency(bankBalance, currencySymbol, currencyLocale)}).
+                </span>
+              </div>
+            )}
 
             {issueError && (
               <div className="ledger-inline-alert" role="alert">
@@ -275,7 +293,7 @@ export function MortgagesView({ room, playerId }: MortgagesViewProps) {
             <button
               type="submit"
               className="btn btn-primary mortgage-submit-btn"
-              disabled={isMutating || activePlayers.length === 0}
+              disabled={isMutating || activePlayers.length === 0 || isBankInsufficient}
             >
               <PlusCircle size={18} aria-hidden="true" />
               <span>{issuing ? 'Issuing...' : 'Issue Mortgage'}</span>

@@ -4,6 +4,8 @@ import {
   LedgerError,
   generateRoomCode,
   createInitialRoom,
+  selectLobbyBanker,
+  startGame,
   joinOrReclaimPlayer,
   applyPayment,
   issueMortgage,
@@ -17,6 +19,7 @@ import type { RoomState } from '../types/game';
 
 function makeBaseRoom(overrides?: Partial<{
   startingCash: number;
+  bankStartingCash: number;
   negativeLimit: number;
   passStartAmount: number;
   mortgageInterestPct: 0 | 10;
@@ -27,6 +30,7 @@ function makeBaseRoom(overrides?: Partial<{
     currencySymbol: '₹',
     currencyLocale: 'en-IN',
     startingCash: overrides?.startingCash ?? 15000,
+    bankStartingCash: overrides?.bankStartingCash ?? 100000,
     negativeLimit: overrides?.negativeLimit ?? 5000,
     passStartAmount: overrides?.passStartAmount ?? 2000,
     mortgageInterestPct: overrides?.mortgageInterestPct ?? 10,
@@ -34,11 +38,16 @@ function makeBaseRoom(overrides?: Partial<{
   });
 }
 
-function makeRoomWithPlayers(): RoomState {
+function makeStartedRoom(room: RoomState, bankerId = 'p-creator', actorId = bankerId): RoomState {
+  const withBanker = selectLobbyBanker(room, { bankerId, actorId });
+  return startGame(withBanker, { actorId });
+}
+
+function makeRoomWithPlayers(bankerId = 'p-creator'): RoomState {
   let room = makeBaseRoom();
   room = joinOrReclaimPlayer(room, { playerId: 'p-raj', name: 'Raj' }).room;
   room = joinOrReclaimPlayer(room, { playerId: 'p-priya', name: 'Priya' }).room;
-  return room;
+  return makeStartedRoom(room, bankerId);
 }
 
 describe('formatCurrency & computeQuickChips', () => {
@@ -81,11 +90,14 @@ describe('generateRoomCode & createInitialRoom', () => {
     }
   });
 
-  it('sets creator as active player with startingCash and bankerId === creatorId', () => {
+  it('starts room in lobby status with blank bankerId and configured bank balance', () => {
     const room = makeBaseRoom();
     expect(room.meta.code).toBe('AB23CD');
+    expect(room.meta.status).toBe('lobby');
     expect(room.meta.creatorId).toBe('p-creator');
-    expect(room.meta.bankerId).toBe('p-creator');
+    expect(room.meta.bankerId).toBe('');
+    expect(room.meta.bankStartingCash).toBe(100000);
+    expect(room.meta.bankBalance).toBe(100000);
     expect(room.players['p-creator']).toMatchObject({
       id: 'p-creator',
       name: 'Aarav',
@@ -102,6 +114,7 @@ describe('generateRoomCode & createInitialRoom', () => {
         creatorName: '   ',
         currencySymbol: '₹',
         startingCash: 15000,
+        bankStartingCash: 100000,
         negativeLimit: 5000,
         passStartAmount: 2000,
         mortgageInterestPct: 10,
@@ -113,10 +126,65 @@ describe('generateRoomCode & createInitialRoom', () => {
         creatorName: 'Aarav',
         currencySymbol: '₹',
         startingCash: -100,
+        bankStartingCash: 100000,
         negativeLimit: 5000,
         passStartAmount: 2000,
         mortgageInterestPct: 10,
       })
+    ).toThrow(LedgerError);
+
+    expect(() =>
+      createInitialRoom({
+        creatorName: 'Aarav',
+        currencySymbol: '₹',
+        startingCash: 15000,
+        bankStartingCash: -1,
+        negativeLimit: 5000,
+        passStartAmount: 2000,
+        mortgageInterestPct: 10,
+      })
+    ).toThrow(LedgerError);
+  });
+});
+
+describe('lobby, 4-player cap, and non-creator banker start', () => {
+  it('caps lobby at 4 active/bankrupt players and blocks new joins after game starts', () => {
+    let room = makeBaseRoom();
+    room = joinOrReclaimPlayer(room, { playerId: 'p-2', name: 'Raj' }).room;
+    room = joinOrReclaimPlayer(room, { playerId: 'p-3', name: 'Priya' }).room;
+    room = joinOrReclaimPlayer(room, { playerId: 'p-4', name: 'Kabir' }).room;
+
+    expect(() =>
+      joinOrReclaimPlayer(room, { playerId: 'p-5', name: 'Meera' })
+    ).toThrow(LedgerError);
+
+    // Non-creator p-2 selects p-3 as Banker and starts the game
+    room = selectLobbyBanker(room, { bankerId: 'p-3', actorId: 'p-2' });
+    expect(room.meta.bankerId).toBe('p-3');
+
+    const started = startGame(room, { actorId: 'p-2' });
+    expect(started.meta.status).toBe('active');
+    expect(started.meta.bankerId).toBe('p-3');
+
+    // Cannot start game again or change lobby banker when active
+    expect(() => startGame(started, { actorId: 'p-3' })).toThrow(LedgerError);
+    expect(() =>
+      selectLobbyBanker(started, { bankerId: 'p-2', actorId: 'p-creator' })
+    ).toThrow(LedgerError);
+  });
+
+  it('requires a selected banker before starting and blocks new joins once active', () => {
+    let room = makeBaseRoom();
+    room = joinOrReclaimPlayer(room, { playerId: 'p-raj', name: 'Raj' }).room;
+
+    expect(() => startGame(room, { actorId: 'p-raj' })).toThrow(LedgerError);
+
+    const started = startGame(room, { actorId: 'p-raj', bankerId: 'p-raj' });
+    expect(started.meta.status).toBe('active');
+    expect(started.meta.bankerId).toBe('p-raj');
+
+    expect(() =>
+      joinOrReclaimPlayer(started, { playerId: 'p-late', name: 'Latecomer' })
     ).toThrow(LedgerError);
   });
 });
@@ -198,9 +266,10 @@ describe('applyPayment', () => {
     ).toThrow(LedgerError);
   });
 
-  it('enforces negativeLimit === 0 as no negative balance allowed', () => {
-    let room = makeBaseRoom({ startingCash: 1000, negativeLimit: 0 });
+  it('enforces negativeLimit === 0 as no negative balance allowed and credits bank on BANK transfer', () => {
+    let room = makeBaseRoom({ startingCash: 1000, negativeLimit: 0, bankStartingCash: 5000 });
     room = joinOrReclaimPlayer(room, { playerId: 'p-raj', name: 'Raj' }).room;
+    room = makeStartedRoom(room, 'p-raj');
 
     const exactZero = applyPayment(room, {
       fromId: 'p-raj',
@@ -209,6 +278,7 @@ describe('applyPayment', () => {
       actorId: 'p-raj',
     });
     expect(exactZero.players['p-raj'].balance).toBe(0);
+    expect(exactZero.meta.bankBalance).toBe(6000);
 
     expect(() =>
       applyPayment(room, {
@@ -276,6 +346,7 @@ describe('applyPayment', () => {
       type: 'pass_start',
     });
     expect(afterPassStart.players['p-raj'].balance).toBe(17000);
+    expect(afterPassStart.meta.bankBalance).toBe(98000);
 
     const afterBankPay = applyPayment(afterPassStart, {
       fromId: 'BANK',
@@ -286,15 +357,42 @@ describe('applyPayment', () => {
       note: 'Bank dividend',
     });
     expect(afterBankPay.players['p-priya'].balance).toBe(15500);
+    expect(afterBankPay.meta.bankBalance).toBe(97500);
+  });
+
+  it('blocks bank payouts when bankBalance is insufficient', () => {
+    let room = makeBaseRoom({ bankStartingCash: 1000, passStartAmount: 2000 });
+    room = joinOrReclaimPlayer(room, { playerId: 'p-raj', name: 'Raj' }).room;
+    room = makeStartedRoom(room, 'p-raj');
+
+    expect(() =>
+      applyPayment(room, {
+        fromId: 'BANK',
+        toId: 'p-raj',
+        amount: 2000,
+        actorId: 'p-raj',
+        type: 'pass_start',
+      })
+    ).toThrow(LedgerError);
+
+    expect(() =>
+      issueMortgage(room, {
+        playerId: 'p-raj',
+        propertyName: 'Goa',
+        principal: 1500,
+        actorId: 'p-raj',
+      })
+    ).toThrow(LedgerError);
   });
 });
 
 describe('issueMortgage & clearMortgage', () => {
-  it('computes payoffAmount at 0% and 10% and credits player', () => {
-    const room0 = joinOrReclaimPlayer(
+  it('computes payoffAmount at 0% and 10% and deducts principal from bankBalance', () => {
+    const room0Lobby = joinOrReclaimPlayer(
       makeBaseRoom({ mortgageInterestPct: 0 }),
       { playerId: 'p-raj', name: 'Raj' }
     ).room;
+    const room0 = makeStartedRoom(room0Lobby, 'p-creator');
 
     const mortgaged0 = issueMortgage(room0, {
       playerId: 'p-raj',
@@ -307,11 +405,13 @@ describe('issueMortgage & clearMortgage', () => {
     expect(m0.payoffAmount).toBe(305);
     expect(m0.active).toBe(true);
     expect(mortgaged0.players['p-raj'].balance).toBe(15305);
+    expect(mortgaged0.meta.bankBalance).toBe(99695);
 
-    const room10 = joinOrReclaimPlayer(
+    const room10Lobby = joinOrReclaimPlayer(
       makeBaseRoom({ mortgageInterestPct: 10 }),
       { playerId: 'p-raj', name: 'Raj' }
     ).room;
+    const room10 = makeStartedRoom(room10Lobby, 'p-creator');
 
     const mortgaged10 = issueMortgage(room10, {
       playerId: 'p-raj',
@@ -352,23 +452,24 @@ describe('issueMortgage & clearMortgage', () => {
     // Mortgage remains active on failed clear
     expect(lowRoom.mortgages[mortgageId].active).toBe(true);
 
-    // Clearing on original room succeeds
+    // Clearing on original room succeeds and credits bankBalance
     const cleared = clearMortgage(room, { mortgageId, actorId: 'p-creator' });
     expect(cleared.players['p-raj'].balance).toBe(14800);
+    expect(cleared.meta.bankBalance).toBe(100200);
     expect(cleared.mortgages[mortgageId].active).toBe(false);
     expect(cleared.mortgages[mortgageId].clearedAt).not.toBeNull();
   });
 });
 
 describe('markPlayerExit & reassignBanker', () => {
-  it('zeros balance, voids active mortgages, and reassigns bankerId to active Creator or next active player', () => {
-    let room = makeRoomWithPlayers();
-    // Reassign banker to Raj first, then issue Raj a mortgage
-    room = reassignBanker(room, {
-      newBankerId: 'p-raj',
-      actorId: 'p-creator',
-    });
+  it('zeros balance, voids active mortgages, and reassigns bankerId without creator priority', () => {
+    let room = makeRoomWithPlayers('p-raj');
     expect(room.meta.bankerId).toBe('p-raj');
+
+    // Creator cannot hijack banker role while active banker is online
+    expect(() =>
+      reassignBanker(room, { newBankerId: 'p-creator', actorId: 'p-creator' })
+    ).toThrow(LedgerError);
 
     room = issueMortgage(room, {
       playerId: 'p-raj',
@@ -378,7 +479,7 @@ describe('markPlayerExit & reassignBanker', () => {
     });
     const rajMortgageId = Object.keys(room.mortgages)[0];
 
-    // Banker Raj goes bankrupt -> bankerId returns to active Creator
+    // Banker Raj goes bankrupt -> bankerId moves to earliest active player (Aarav)
     const afterRajExit = markPlayerExit(room, {
       targetPlayerId: 'p-raj',
       status: 'bankrupt',
@@ -398,6 +499,30 @@ describe('markPlayerExit & reassignBanker', () => {
     expect(afterCreatorExit.players['p-creator'].status).toBe('removed');
     expect(afterCreatorExit.players['p-creator'].balance).toBe(0);
     expect(afterCreatorExit.meta.bankerId).toBe('p-priya');
+  });
+
+  it('allows any active player to claim Banker when current Banker is missing or inactive', () => {
+    const base = makeRoomWithPlayers('p-raj');
+    const brokenBankerRoom: RoomState = {
+      ...base,
+      meta: {
+        ...base.meta,
+        bankerId: 'p-raj',
+      },
+      players: {
+        ...base.players,
+        'p-raj': {
+          ...base.players['p-raj'],
+          status: 'removed',
+        },
+      },
+    };
+
+    const claimed = reassignBanker(brokenBankerRoom, {
+      newBankerId: 'p-priya',
+      actorId: 'p-priya',
+    });
+    expect(claimed.meta.bankerId).toBe('p-priya');
   });
 });
 
@@ -436,33 +561,39 @@ describe('undoLastTransaction', () => {
       actorId: 'p-creator',
     });
     const mortgageId = Object.keys(room.mortgages)[0];
-    // 5. unmortgage: Raj -1100 (Raj 15900, active: false)
+    // 5. unmortgage: Raj -1100 (Raj 15900, active: false, Bank 97600)
     room = clearMortgage(room, { mortgageId, actorId: 'p-creator' });
     expect(room.players['p-raj'].balance).toBe(15900);
+    expect(room.meta.bankBalance).toBe(97600);
     expect(room.mortgages[mortgageId].active).toBe(false);
 
-    // Undo #5 (unmortgage) -> Raj 17000, active: true
+    // Undo #5 (unmortgage) -> Raj 17000, active: true, Bank 96500
     room = undoLastTransaction(room, { actorId: 'p-creator' });
     expect(room.players['p-raj'].balance).toBe(17000);
+    expect(room.meta.bankBalance).toBe(96500);
     expect(room.mortgages[mortgageId].active).toBe(true);
 
-    // Undo #4 (mortgage) -> skips undone #5 and undo tx, reverses mortgage -> Raj 16000, active: false
+    // Undo #4 (mortgage) -> skips undone #5 and undo tx, reverses mortgage -> Raj 16000, Bank 97500
     room = undoLastTransaction(room, { actorId: 'p-creator' });
     expect(room.players['p-raj'].balance).toBe(16000);
+    expect(room.meta.bankBalance).toBe(97500);
     expect(room.mortgages[mortgageId].active).toBe(false);
 
-    // Undo #3 (bank_pay) -> Priya 16000
+    // Undo #3 (bank_pay) -> Priya 16000, Bank 98000
     room = undoLastTransaction(room, { actorId: 'p-creator' });
     expect(room.players['p-priya'].balance).toBe(16000);
+    expect(room.meta.bankBalance).toBe(98000);
 
-    // Undo #2 (pass_start) -> Raj 14000
+    // Undo #2 (pass_start) -> Raj 14000, Bank 100000
     room = undoLastTransaction(room, { actorId: 'p-creator' });
     expect(room.players['p-raj'].balance).toBe(14000);
+    expect(room.meta.bankBalance).toBe(100000);
 
-    // Undo #1 (transfer) -> Raj 15000, Priya 15000
+    // Undo #1 (transfer) -> Raj 15000, Priya 15000, Bank 100000
     room = undoLastTransaction(room, { actorId: 'p-creator' });
     expect(room.players['p-raj'].balance).toBe(15000);
     expect(room.players['p-priya'].balance).toBe(15000);
+    expect(room.meta.bankBalance).toBe(100000);
 
     // Nothing left to undo
     expect(() =>

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   loadSession,
   saveSession,
@@ -6,14 +6,8 @@ import {
   getRoomCodeFromUrl,
   createLocalPlayerId,
 } from './session';
-import {
-  isFirebaseConfigured,
-  applyRoomTransactionCallback,
-  joinRoom,
-  reclaimSeat,
-  runRoomMutation,
-} from './roomStore';
-import { applyPayment, createInitialRoom, joinOrReclaimPlayer } from './ledger';
+import { applyRoomTransactionCallback } from './roomStore';
+import { applyPayment, createInitialRoom, joinOrReclaimPlayer, startGame } from './ledger';
 import type { RoomState } from '../types/game';
 
 function createMemoryStorage(): Storage {
@@ -47,6 +41,7 @@ function makeRoom(): RoomState {
     currencySymbol: '₹',
     currencyLocale: 'en-IN',
     startingCash: 15000,
+    bankStartingCash: 100000,
     negativeLimit: 5000,
     passStartAmount: 2000,
     mortgageInterestPct: 10,
@@ -127,7 +122,7 @@ describe('applyRoomTransactionCallback', () => {
   });
 
   it('catches LedgerError cleanly and aborts without committing', () => {
-    const room = makeRoom();
+    const room = startGame(makeRoom(), { actorId: 'p-creator', bankerId: 'p-creator' });
     const res = applyRoomTransactionCallback(room, (current) =>
       applyPayment(current, {
         fromId: 'p-creator',
@@ -210,21 +205,73 @@ describe('applyRoomTransactionCallback', () => {
     });
     expect(arrayRes.commit).toBe(true);
   });
+
+  it('defaults missing meta.status/bank fields on legacy snapshots while preserving explicit lobby and 0 values', () => {
+    const legacySnapshot = {
+      meta: {
+        code: 'AB34CD',
+        createdAt: 1000,
+        creatorId: 'p-creator',
+        bankerId: 'p-creator',
+        currencySymbol: '₹',
+        currencyLocale: 'en-IN',
+        startingCash: 15000,
+        negativeLimit: 5000,
+        passStartAmount: 2000,
+        mortgageInterestPct: 10,
+      },
+      players: {
+        'p-creator': { id: 'p-creator', name: 'Aarav', balance: 15000, status: 'active', joinedAt: 1000 },
+      },
+    };
+    const legacyRes = applyRoomTransactionCallback(legacySnapshot, (current) => {
+      expect(current.meta.status).toBe('active');
+      expect(current.meta.bankStartingCash).toBe(0);
+      expect(current.meta.bankBalance).toBe(0);
+      return current;
+    });
+    expect(legacyRes.commit).toBe(true);
+
+    const zeroBankLobby = makeRoom();
+    zeroBankLobby.meta.bankStartingCash = 0;
+    zeroBankLobby.meta.bankBalance = 0;
+    const lobbyRes = applyRoomTransactionCallback(zeroBankLobby, (current) => {
+      expect(current.meta.status).toBe('lobby');
+      expect(current.meta.bankStartingCash).toBe(0);
+      expect(current.meta.bankBalance).toBe(0);
+      return current;
+    });
+    expect(lobbyRes.commit).toBe(true);
+  });
 });
 
 describe('firebase config & unconfigured store guards', () => {
-  it('reports isFirebaseConfigured() === false when env vars are absent', () => {
-    expect(isFirebaseConfigured()).toBe(false);
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it('reports isFirebaseConfigured() === false when env vars are absent', async () => {
+    vi.stubEnv('VITE_FIREBASE_API_KEY', '');
+    vi.stubEnv('VITE_FIREBASE_DATABASE_URL', '');
+    vi.resetModules();
+    const unconfiguredStore = await import('./roomStore');
+    expect(unconfiguredStore.isFirebaseConfigured()).toBe(false);
   });
 
   it('returns clean error results when mutating without Firebase configured', async () => {
-    const mutationRes = await runRoomMutation('AB34CD', (room) => room);
+    vi.stubEnv('VITE_FIREBASE_API_KEY', '');
+    vi.stubEnv('VITE_FIREBASE_DATABASE_URL', '');
+    vi.resetModules();
+    const unconfiguredStore = await import('./roomStore');
+
+    const mutationRes = await unconfiguredStore.runRoomMutation('AB34CD', (room) => room);
     expect(mutationRes).toEqual({ ok: false, error: 'Firebase is not configured.' });
 
-    const joinRes = await joinRoom('AB34CD', { playerId: 'p-1', name: 'Raj' });
+    const joinRes = await unconfiguredStore.joinRoom('AB34CD', { playerId: 'p-1', name: 'Raj' });
     expect(joinRes).toEqual({ ok: false, error: 'Firebase is not configured.' });
 
-    const reclaimRes = await reclaimSeat('AB34CD', 'p-1');
+    const reclaimRes = await unconfiguredStore.reclaimSeat('AB34CD', 'p-1');
     expect(reclaimRes).toEqual({ ok: false, error: 'Firebase is not configured.' });
   });
 });

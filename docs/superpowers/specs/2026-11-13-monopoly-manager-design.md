@@ -9,7 +9,8 @@ Indian Business and Monopoly games with family in the same room bog down in coun
 ### Goals
 - **Fast room join:** Create or join a room in under 30 seconds via 6-character code or QR/share link with display name only (no accounts or passwords).
 - **Resilient live sync:** Real-time balance, mortgage, and transaction sync across iOS and Android browsers that survives phone screen lock, app switching, and page refresh.
-- **Configurable table rules:** Room creator sets currency (`₹` INR default, `$`, `€`, `£`, or custom symbol), starting cash, negative balance limit (`0` disables negative balances), Pass Start bonus amount, and mortgage payoff fee (`0%` or `10%`).
+- **Configurable table rules:** Room creator sets currency (`₹` INR default, `$`, `€`, `£`, or custom symbol), player starting cash, bank starting balance (default `100000`), negative balance limit (`0` disables negative balances), Pass Start bonus amount, and mortgage payoff fee (`0%` or `10%`).
+- **Pre-game lobby & finite Bank:** Rooms open in `'lobby'` status (max 4 non-removed players). Any joined player selects who acts as Banker (not tied to room creator) and starts the game. Payments to `BANK` and cleared mortgages credit `bankBalance`; Bank payouts, Pass Start credits, and issued mortgages deduct from `bankBalance` and block if insufficient.
 - **Low-friction payments:** Any player can pay another player or the Bank directly. Assigned Banker (reassignable anytime) controls Bank payouts, Pass Start bonuses, mortgage issue/clear, and Undo.
 - **Overdraft & mortgage enforcement:** Transfers that would push a player past the negative limit are blocked atomically until they mortgage property or receive cash.
 
@@ -48,10 +49,13 @@ Indian Business and Monopoly games with family in the same room bog down in coun
   - `code`: string (6-char uppercase alphanumeric, unambiguous alphabet excluding `O/0/I/1`)
   - `createdAt`: server timestamp
   - `creatorId`: string
-  - `bankerId`: string
+  - `bankerId`: string (`''` until selected in lobby)
+  - `status`: `'lobby' | 'active'`
   - `currencySymbol`: string (default `₹`)
   - `currencyLocale`: string (`en-IN` when `₹`, else `en-US` / standard grouping)
   - `startingCash`: integer (>= 0)
+  - `bankStartingCash`: integer (>= 0)
+  - `bankBalance`: integer (>= 0)
   - `negativeLimit`: integer (>= 0; stored as positive max debt magnitude, so min allowed balance is `-negativeLimit`)
   - `passStartAmount`: integer (>= 0)
   - `mortgageInterestPct`: `0 | 10`
@@ -89,17 +93,17 @@ Indian Business and Monopoly games with family in the same room bog down in coun
 
 ## Core Flows & Rules
 
-1. **Create Room:** Creator enters display name, picks currency (`₹` default, `$`, `€`, `£`, custom), starting cash (e.g. `15000`), negative limit (e.g. `5000`, `0` for no negative), Pass Start bonus (e.g. `2000`), and mortgage interest (`0%` or `10%`). Creator starts as initial Banker.
-2. **Join / Reclaim Room:** Cousins enter 6-char room code (or open share link / scan QR) and either join with a unique display name (credited `startingCash`) or tap **Reclaim seat** to resume an existing player on a new browser/device.
-3. **Direct Pay (Any Active Player):** Select active recipient (another player or `BANK`), enter integer amount (with quick amount chips + large touch keypad), optional short note, tap Pay. Rejected immediately if `sender.balance - amount < -negativeLimit`.
+1. **Create Room:** Creator enters display name, picks currency (`₹` default, `$`, `€`, `£`, custom), player starting cash (e.g. `15000`), Bank starting balance (default `100000`), negative limit (e.g. `5000`, `0` for no negative), Pass Start bonus (e.g. `2000`), and mortgage interest (`0%` or `10%`). Room starts in `'lobby'` with `bankerId: ''`.
+2. **Join / Waiting Room / Reclaim:** Up to 4 players enter the 6-char room code (or open share link / scan QR) while in `'lobby'` and join with a unique display name (credited `startingCash`). Any active player picks who becomes Banker and starts the game (at which point new player joins close, while existing seats can still be reclaimed anytime).
+3. **Direct Pay (Any Active Player):** Select active recipient (another player or `BANK`), enter integer amount (with quick amount chips + large touch keypad), optional short note, tap Pay. Paying `BANK` credits `bankBalance`; rejected immediately if `sender.balance - amount < -negativeLimit`.
 4. **Banker Controls (Banker Only):**
-   - **Pass Start:** 1-tap credit `passStartAmount` from `BANK` to chosen active player.
-   - **Bank Payout:** Credit custom amount from `BANK` to chosen active player (rewards, chance/community chest).
-   - **Issue Mortgage:** Choose active player, enter physical card/property name and mortgage payout amount; credits player from `BANK` and logs active mortgage with computed `payoffAmount`.
-   - **Clear Mortgage:** Select active mortgage; deducts `payoffAmount` from player to `BANK` (blocked if it breaches `-negativeLimit`) and marks mortgage cleared.
-   - **Bankrupt / Remove Player:** Marks player `bankrupt` or `removed`, zeros their balance, voids active mortgages, and hides them from Pay recipients and Banker selection. If the exiting player was Banker, automatically reassigns `bankerId` to the active Creator or next active player.
-   - **Undo Last:** Reverses the latest non-undone transaction (`transfer`, `bank_pay`, `pass_start`, `mortgage`, `unmortgage`), restoring balances and active mortgage flag atomically.
-   - **Reassign Banker:** Current Banker (or room creator) can transfer Banker role to any active player.
+   - **Pass Start:** 1-tap credit `passStartAmount` from `BANK` to chosen active player (blocked if `bankBalance < passStartAmount`).
+   - **Bank Payout:** Credit custom amount from `BANK` to chosen active player (blocked if `bankBalance < amount`).
+   - **Issue Mortgage:** Choose active player, enter physical card/property name and mortgage payout amount; credits player from `BANK` (blocked if `bankBalance < principal`) and logs active mortgage with computed `payoffAmount`.
+   - **Clear Mortgage:** Select active mortgage; deducts `payoffAmount` from player to `BANK` (blocked if it breaches `-negativeLimit`), credits `bankBalance`, and marks mortgage cleared.
+   - **Bankrupt / Remove Player:** Marks player `bankrupt` or `removed`, zeros their balance, voids active mortgages, and hides them from Pay recipients and Banker selection. If the exiting player was Banker, automatically reassigns `bankerId` to the earliest active player.
+   - **Undo Last:** Reverses the latest non-undone transaction (`transfer`, `bank_pay`, `pass_start`, `mortgage`, `unmortgage`), restoring player balances, `bankBalance`, and active mortgage flag atomically.
+   - **Reassign Banker:** Current Banker can transfer Banker role to any active player; if current Banker becomes missing/inactive, any active player can claim or assign a new Banker.
 
 ## UI & Visual Direction
 

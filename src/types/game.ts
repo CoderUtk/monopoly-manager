@@ -1,4 +1,5 @@
 export type PlayerStatus = 'active' | 'bankrupt' | 'removed';
+export type RoomStatus = 'lobby' | 'active';
 
 export type TransactionType =
   | 'transfer'
@@ -15,9 +16,12 @@ export interface RoomMeta {
   createdAt: number;
   creatorId: string;
   bankerId: string;
+  status: RoomStatus;
   currencySymbol: string;
   currencyLocale: string;
   startingCash: number;
+  bankStartingCash: number;
+  bankBalance: number;
   negativeLimit: number;
   passStartAmount: number;
   mortgageInterestPct: 0 | 10;
@@ -74,6 +78,7 @@ export interface CreateRoomInput {
   currencySymbol: string;
   currencyLocale?: string;
   startingCash: number;
+  bankStartingCash: number;
   negativeLimit: number;
   passStartAmount: number;
   mortgageInterestPct: 0 | 10;
