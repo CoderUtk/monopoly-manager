@@ -47,23 +47,24 @@
   --color-scrim: oklch(20% 0.018 165 / 0.42);
   --color-selection: oklch(88% 0.065 168);
 
-  /* Player seat identity colors (8 distinct swatches + subtle washes) */
-  --player-crimson: oklch(50% 0.2 24);
-  --player-crimson-soft: oklch(96% 0.02 24);
-  --player-royal: oklch(48% 0.18 258);
-  --player-royal-soft: oklch(95.5% 0.02 258);
-  --player-emerald: oklch(47% 0.135 160);
-  --player-emerald-soft: oklch(95.5% 0.022 160);
-  --player-amber: oklch(56% 0.155 75);
-  --player-amber-soft: oklch(96.5% 0.025 80);
-  --player-violet: oklch(48% 0.18 295);
-  --player-violet-soft: oklch(95.5% 0.022 295);
-  --player-orange: oklch(55% 0.175 45);
-  --player-orange-soft: oklch(96% 0.024 45);
-  --player-teal: oklch(46% 0.11 195);
-  --player-teal-soft: oklch(95.5% 0.02 195);
-  --player-slate: oklch(44% 0.03 250);
-  --player-slate-soft: oklch(95% 0.008 250);
+  /* Player seat identity colors (8 basic high-contrast board colors + subtle washes) */
+  --player-red: oklch(54% 0.22 25);
+  --player-red-soft: oklch(96% 0.025 25);
+  --player-blue: oklch(52% 0.2 258);
+  --player-blue-soft: oklch(95.5% 0.025 258);
+  --player-green: oklch(52% 0.17 148);
+  --player-green-soft: oklch(95.5% 0.028 148);
+  --player-yellow: oklch(83% 0.18 95);
+  --player-yellow-soft: oklch(97% 0.045 95);
+  --player-orange: oklch(65% 0.2 45);
+  --player-orange-soft: oklch(96% 0.03 45);
+  --player-purple: oklch(52% 0.21 300);
+  --player-purple-soft: oklch(95.5% 0.025 300);
+  --player-pink: oklch(62% 0.21 350);
+  --player-pink-soft: oklch(96% 0.025 350);
+  --player-black: oklch(24% 0.015 250);
+  --player-black-soft: oklch(94.5% 0.008 250);
+  --swatch-ring: oklch(20% 0.018 165 / 0.2);
 
   /* Elevation */
   --shadow-sm: 0 1px 2px oklch(20% 0.018 165 / 0.06), 0 1px 1px oklch(20% 0.018 165 / 0.04);

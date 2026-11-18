@@ -2,14 +2,14 @@ export type PlayerStatus = 'active' | 'bankrupt' | 'removed';
 export type RoomStatus = 'lobby' | 'active';
 
 export type PlayerColorId =
-  | 'crimson'
-  | 'royal'
-  | 'emerald'
-  | 'amber'
-  | 'violet'
+  | 'red'
+  | 'blue'
+  | 'green'
+  | 'yellow'
   | 'orange'
-  | 'teal'
-  | 'slate';
+  | 'purple'
+  | 'pink'
+  | 'black';
 
 export type TransactionType =
   | 'transfer'

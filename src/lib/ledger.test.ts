@@ -730,7 +730,7 @@ describe('player colors, renamePlayer, and Club/Rest House/Jail board shortcuts'
     const base = createInitialRoom({
       creatorId: 'p-1',
       creatorName: 'Aarav',
-      creatorColor: 'royal',
+      creatorColor: 'blue',
       currencySymbol: '₹',
       startingCash: 15000,
       bankStartingCash: 100000,
@@ -739,24 +739,24 @@ describe('player colors, renamePlayer, and Club/Rest House/Jail board shortcuts'
       mortgageInterestPct: 10,
       code: 'CLR123',
     });
-    expect(base.players['p-1'].color).toBe('royal');
+    expect(base.players['p-1'].color).toBe('blue');
 
     expect(() =>
-      joinOrReclaimPlayer(base, { playerId: 'p-2', name: 'Raj', color: 'royal' })
+      joinOrReclaimPlayer(base, { playerId: 'p-2', name: 'Raj', color: 'blue' })
     ).toThrow(LedgerError);
 
     const joined = joinOrReclaimPlayer(base, {
       playerId: 'p-2',
       name: 'Raj',
-      color: 'emerald',
+      color: 'yellow',
     }).room;
-    expect(joined.players['p-2'].color).toBe('emerald');
+    expect(joined.players['p-2'].color).toBe('yellow');
 
     const autoAssigned = joinOrReclaimPlayer(joined, {
       playerId: 'p-3',
       name: 'Priya',
     }).room;
-    expect(autoAssigned.players['p-3'].color).toBe('crimson');
+    expect(autoAssigned.players['p-3'].color).toBe('red');
   });
 
   it('allows only the Banker to rename active players and rejects duplicates', () => {
