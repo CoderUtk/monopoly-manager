@@ -396,106 +396,73 @@ export function PaySheet({
           <div className="pay-preview-list" aria-live="polite">
             {mode === 'player_pay' ? (
               <>
-                <div className="row-between text-sm">
-                  <span className="text-muted">Your balance after transfer</span>
+                <div className="pay-preview-row">
+                  <span className="pay-preview-label">Your balance after transfer</span>
                   <strong
                     className={
-                      projectedSenderBalance < 0 ? 'tabular-nums text-danger' : 'tabular-nums'
+                      projectedSenderBalance < 0
+                        ? 'pay-preview-value tabular-nums text-danger'
+                        : 'pay-preview-value tabular-nums'
                     }
                   >
                     {formatCurrency(me.balance, currencySymbol, currencyLocale)} →{' '}
                     {formatCurrency(projectedSenderBalance, currencySymbol, currencyLocale)}
                   </strong>
                 </div>
-                {selectedRecipient?.player && amount > 0 && (
-                  <div className="row-between text-sm">
-                    <span className="text-muted">{selectedRecipient.player.name} after transfer</span>
-                    <strong className="tabular-nums text-success">
-                      {formatCurrency(
-                        selectedRecipient.player.balance,
-                        currencySymbol,
-                        currencyLocale
-                      )}{' '}
-                      →{' '}
-                      {formatCurrency(
-                        selectedRecipient.player.balance + amount,
-                        currencySymbol,
-                        currencyLocale
-                      )}
-                    </strong>
-                  </div>
-                )}
-                {isOverdraft && (
-                  <div className="table-inline-alert" role="alert">
-                    <AlertTriangle size={16} aria-hidden="true" />
-                    <span>
-                      Exceeds debt limit (
-                      <span className="tabular-nums">
-                        {formatCurrency(-negativeLimit, currencySymbol, currencyLocale)}
-                      </span>
-                      ) by{' '}
-                      <span className="tabular-nums">
-                        {formatCurrency(overdraftExcess, currencySymbol, currencyLocale)}
-                      </span>
-                      .
-                    </span>
-                  </div>
-                )}
-                {remainingHeadroom !== null && (
-                  <div className="table-inline-warning">
-                    <span>
-                      Within debt limit (
-                      <span className="tabular-nums">
-                        {formatCurrency(remainingHeadroom, currencySymbol, currencyLocale)}
-                      </span>{' '}
-                      headroom left).
-                    </span>
-                  </div>
-                )}
+                <div className="pay-preview-row">
+                  <span className="pay-preview-label">
+                    {selectedRecipient?.isBank
+                      ? 'Bank after transfer'
+                      : `${selectedRecipient?.player?.name ?? 'Recipient'} after transfer`}
+                  </span>
+                  <strong
+                    className={
+                      amount > 0
+                        ? 'pay-preview-value tabular-nums text-success'
+                        : 'pay-preview-value tabular-nums text-muted'
+                    }
+                  >
+                    {selectedRecipient?.isBank
+                      ? `${formatCurrency(bankBalance, currencySymbol, currencyLocale)} → ${formatCurrency(bankBalance + amount, currencySymbol, currencyLocale)}`
+                      : selectedRecipient?.player
+                        ? `${formatCurrency(selectedRecipient.player.balance, currencySymbol, currencyLocale)} → ${formatCurrency(selectedRecipient.player.balance + amount, currencySymbol, currencyLocale)}`
+                        : '—'}
+                  </strong>
+                </div>
               </>
             ) : (
               <>
-                <div className="row-between text-sm">
-                  <span className="text-muted">Bank balance after payout</span>
+                <div className="pay-preview-row">
+                  <span className="pay-preview-label">Bank balance after payout</span>
                   <strong
                     className={
-                      isBankInsufficient ? 'tabular-nums text-danger' : 'tabular-nums'
+                      isBankInsufficient
+                        ? 'pay-preview-value tabular-nums text-danger'
+                        : 'pay-preview-value tabular-nums'
                     }
                   >
                     {formatCurrency(bankBalance, currencySymbol, currencyLocale)} →{' '}
                     {formatCurrency(projectedBankBalance, currencySymbol, currencyLocale)}
                   </strong>
                 </div>
-                {selectedRecipient?.player && (
-                  <div className="row-between text-sm">
-                    <span className="text-muted">{selectedRecipient.player.name} after payout</span>
-                    <strong className="tabular-nums text-success">
-                      {formatCurrency(
-                        selectedRecipient.player.balance,
-                        currencySymbol,
-                        currencyLocale
-                      )}{' '}
-                      →{' '}
-                      {formatCurrency(
-                        selectedRecipient.player.balance + amount,
-                        currencySymbol,
-                        currencyLocale
-                      )}
-                    </strong>
-                  </div>
-                )}
-                {isBankInsufficient && (
-                  <div className="table-inline-alert" role="alert">
-                    <AlertTriangle size={16} aria-hidden="true" />
-                    <span>
-                      Exceeds Bank balance by{' '}
-                      <span className="tabular-nums">
-                        {formatCurrency(bankShortfall, currencySymbol, currencyLocale)}
-                      </span>
-                      .
-                    </span>
-                  </div>
-                )}
+                <div className="pay-preview-row">
+                  <span className="pay-preview-label">
+                    {selectedRecipient?.player
+                      ? `${selectedRecipient.player.name} after payout`
+                      : 'Recipient after payout'}
+                  </span>
+                  <strong
+                    className={
+                      amount > 0
+                        ? 'pay-preview-value tabular-nums text-success'
+                        : 'pay-preview-value tabular-nums text-muted'
+                    }
+                  >
+                    {selectedRecipient?.player
+                      ? `${formatCurrency(selectedRecipient.player.balance, currencySymbol, currencyLocale)} → ${formatCurrency(selectedRecipient.player.balance + amount, currencySymbol, currencyLocale)}`
+                      : '—'}
+                  </strong>
+                </div>
               </>
             )}
           </div>
@@ -536,6 +503,64 @@ export function PaySheet({
               <Delete size={20} aria-hidden="true" />
             </button>
           </div>
+
+          <div className="pay-status-slot" aria-live="polite">
+            {!isBankerAuthorized ? (
+              <div className="table-inline-alert" role="alert">
+                <AlertTriangle size={15} aria-hidden="true" />
+                <span>Only the current Banker can send Bank payouts.</span>
+              </div>
+            ) : error ? (
+              <div className="table-inline-alert" role="alert">
+                <AlertTriangle size={15} aria-hidden="true" />
+                <span>{error}</span>
+              </div>
+            ) : isOverdraft ? (
+              <div className="table-inline-alert" role="alert">
+                <AlertTriangle size={15} aria-hidden="true" />
+                <span>
+                  Exceeds debt limit (
+                  <span className="tabular-nums">
+                    {formatCurrency(-negativeLimit, currencySymbol, currencyLocale)}
+                  </span>
+                  ) by{' '}
+                  <span className="tabular-nums">
+                    {formatCurrency(overdraftExcess, currencySymbol, currencyLocale)}
+                  </span>
+                  .
+                </span>
+              </div>
+            ) : isBankInsufficient ? (
+              <div className="table-inline-alert" role="alert">
+                <AlertTriangle size={15} aria-hidden="true" />
+                <span>
+                  Exceeds Bank balance by{' '}
+                  <span className="tabular-nums">
+                    {formatCurrency(bankShortfall, currencySymbol, currencyLocale)}
+                  </span>
+                  .
+                </span>
+              </div>
+            ) : remainingHeadroom !== null ? (
+              <div className="table-inline-warning">
+                <span>
+                  Within debt limit (
+                  <span className="tabular-nums">
+                    {formatCurrency(remainingHeadroom, currencySymbol, currencyLocale)}
+                  </span>{' '}
+                  headroom left).
+                </span>
+              </div>
+            ) : (
+              <span className="text-muted">
+                {mode === 'player_pay'
+                  ? negativeLimit === 0
+                    ? `Debt disabled (minimum ${formatCurrency(0, currencySymbol, currencyLocale)}).`
+                    : `Debt limit: -${formatCurrency(negativeLimit, currencySymbol, currencyLocale)}`
+                  : `Bank reserve: ${formatCurrency(bankBalance, currencySymbol, currencyLocale)}`}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="pay-sheet-footer stack-sm">
@@ -573,20 +598,6 @@ export function PaySheet({
               disabled={submitting}
             />
           </div>
-
-          {!isBankerAuthorized && (
-            <div className="table-inline-alert" role="alert">
-              <AlertTriangle size={16} aria-hidden="true" />
-              <span>Only the current Banker can send Bank payouts.</span>
-            </div>
-          )}
-
-          {error && (
-            <div className="table-inline-alert" role="alert">
-              <AlertTriangle size={16} aria-hidden="true" />
-              <span>{error}</span>
-            </div>
-          )}
 
           <button type="submit" className="btn btn-primary pay-submit-btn" disabled={!canSubmit}>
             <Send size={18} aria-hidden="true" />

@@ -449,6 +449,36 @@
   gap: var(--space-1);
 }
 
+.pay-preview-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 1.35rem;
+  font-size: var(--text-sm);
+}
+
+.pay-preview-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-ink-muted);
+}
+
+.pay-preview-value {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.pay-status-slot {
+  min-height: 1.5rem;
+  display: flex;
+  align-items: center;
+  font-size: var(--text-xs);
+  line-height: var(--leading-tight);
+}
+
 .pay-chip-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
