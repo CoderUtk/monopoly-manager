@@ -211,6 +211,11 @@ details[open] .ledger-details-summary svg {
   color: var(--color-success-soft-ink);
 }
 
+.history-icon--out {
+  background-color: var(--color-warning-soft);
+  color: var(--color-warning-soft-ink);
+}
+
 .history-icon--accent {
   background-color: var(--color-accent-soft);
   color: var(--color-accent-soft-ink);
@@ -219,6 +224,11 @@ details[open] .ledger-details-summary svg {
 .history-icon--danger {
   background-color: var(--color-danger-soft);
   color: var(--color-danger-soft-ink);
+}
+
+.history-row--colored {
+  border-left: 3px solid var(--seat-accent, transparent);
+  padding-left: var(--space-3);
 }
 
 .history-body {

@@ -47,6 +47,24 @@
   --color-scrim: oklch(20% 0.018 165 / 0.42);
   --color-selection: oklch(88% 0.065 168);
 
+  /* Player seat identity colors (8 distinct swatches + subtle washes) */
+  --player-crimson: oklch(50% 0.2 24);
+  --player-crimson-soft: oklch(96% 0.02 24);
+  --player-royal: oklch(48% 0.18 258);
+  --player-royal-soft: oklch(95.5% 0.02 258);
+  --player-emerald: oklch(47% 0.135 160);
+  --player-emerald-soft: oklch(95.5% 0.022 160);
+  --player-amber: oklch(56% 0.155 75);
+  --player-amber-soft: oklch(96.5% 0.025 80);
+  --player-violet: oklch(48% 0.18 295);
+  --player-violet-soft: oklch(95.5% 0.022 295);
+  --player-orange: oklch(55% 0.175 45);
+  --player-orange-soft: oklch(96% 0.024 45);
+  --player-teal: oklch(46% 0.11 195);
+  --player-teal-soft: oklch(95.5% 0.02 195);
+  --player-slate: oklch(44% 0.03 250);
+  --player-slate-soft: oklch(95% 0.008 250);
+
   /* Elevation */
   --shadow-sm: 0 1px 2px oklch(20% 0.018 165 / 0.06), 0 1px 1px oklch(20% 0.018 165 / 0.04);
   --shadow-md: 0 4px 12px oklch(20% 0.018 165 / 0.08), 0 1px 3px oklch(20% 0.018 165 / 0.05);

@@ -2,22 +2,34 @@ import type {
   CreateRoomInput,
   Mortgage,
   Player,
+  PlayerColorId,
   RoomState,
   Transaction,
   TransactionType,
 } from '../types/game';
+import {
+  getFirstAvailableColor,
+  getTakenColorOwners,
+  isValidPlayerColor,
+} from './colors';
 
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ROOM_CODE_LENGTH = 6;
 export const MAX_PLAYERS = 4;
 const MAX_PLAYER_NAME_LENGTH = 20;
 const MAX_PROPERTY_NAME_LENGTH = 40;
+export const DEFAULT_CLUB_AMOUNT = 100;
+export const DEFAULT_REST_HOUSE_AMOUNT = 100;
+export const DEFAULT_JAIL_AMOUNT = 500;
 const UNDOABLE_TYPES: ReadonlySet<TransactionType> = new Set([
   'transfer',
   'bank_pay',
   'pass_start',
   'mortgage',
   'unmortgage',
+  'club',
+  'rest_house',
+  'jail',
 ]);
 
 /**
@@ -154,6 +166,7 @@ function createTransactionRecord(params: {
   createdAt: number;
   note?: string;
   mortgageId?: string;
+  splits?: Record<string, number>;
   reversesTxId?: string | null;
 }): Transaction {
   const tx: Transaction = {
@@ -173,6 +186,9 @@ function createTransactionRecord(params: {
   }
   if (params.mortgageId) {
     tx.mortgageId = params.mortgageId;
+  }
+  if (params.splits) {
+    tx.splits = params.splits;
   }
   return tx;
 }
@@ -235,9 +251,34 @@ export function createInitialRoom(input: CreateRoomInput): RoomState {
     'INVALID_PASS_START',
     'Pass Start amount'
   );
+  const clubAmount = assertNonNegativeInteger(
+    input.clubAmount ?? DEFAULT_CLUB_AMOUNT,
+    'INVALID_CLUB_AMOUNT',
+    'Club amount'
+  );
+  const restHouseAmount = assertNonNegativeInteger(
+    input.restHouseAmount ?? DEFAULT_REST_HOUSE_AMOUNT,
+    'INVALID_REST_HOUSE_AMOUNT',
+    'Rest House amount'
+  );
+  const jailAmount = assertNonNegativeInteger(
+    input.jailAmount ?? DEFAULT_JAIL_AMOUNT,
+    'INVALID_JAIL_AMOUNT',
+    'Jail fine'
+  );
 
   if (input.mortgageInterestPct !== 0 && input.mortgageInterestPct !== 10) {
     throw new LedgerError('INVALID_INTEREST', 'Mortgage interest must be 0% or 10%.');
+  }
+
+  let creatorColor: PlayerColorId;
+  if (input.creatorColor !== undefined) {
+    if (!isValidPlayerColor(input.creatorColor)) {
+      throw new LedgerError('INVALID_COLOR', 'Choose one of the available player colors.');
+    }
+    creatorColor = input.creatorColor;
+  } else {
+    creatorColor = getFirstAvailableColor(undefined);
   }
 
   const code = (input.code ? input.code.trim().toUpperCase() : generateRoomCode());
@@ -264,11 +305,15 @@ export function createInitialRoom(input: CreateRoomInput): RoomState {
       negativeLimit,
       passStartAmount,
       mortgageInterestPct: input.mortgageInterestPct,
+      clubAmount,
+      restHouseAmount,
+      jailAmount,
     },
     players: {
       [creatorId]: {
         id: creatorId,
         name: creatorName,
+        color: creatorColor,
         balance: startingCash,
         status: 'active',
         joinedAt: now,
@@ -284,7 +329,7 @@ export function createInitialRoom(input: CreateRoomInput): RoomState {
  */
 export function joinOrReclaimPlayer(
   room: RoomState,
-  input: { playerId: string; name: string; reclaimPlayerId?: string }
+  input: { playerId: string; name: string; color?: PlayerColorId; reclaimPlayerId?: string }
 ): { room: RoomState; playerId: string } {
   const players = getPlayersMap(room);
 
@@ -330,10 +375,28 @@ export function joinOrReclaimPlayer(
     }
   }
 
+  let assignedColor: PlayerColorId;
+  if (input.color !== undefined) {
+    if (!isValidPlayerColor(input.color)) {
+      throw new LedgerError('INVALID_COLOR', 'Choose one of the available player colors.');
+    }
+    const taken = getTakenColorOwners(players);
+    if (taken[input.color]) {
+      throw new LedgerError(
+        'COLOR_TAKEN',
+        `${taken[input.color]?.name ?? 'Another player'} already chose that color. Pick another color.`
+      );
+    }
+    assignedColor = input.color;
+  } else {
+    assignedColor = getFirstAvailableColor(players);
+  }
+
   const now = nextTimestamp(room);
   const newPlayer: Player = {
     id: playerId,
     name: trimmedName,
+    color: assignedColor,
     balance: room.meta.startingCash,
     status: 'active',
     joinedAt: now,
@@ -751,6 +814,178 @@ export function reassignBanker(
   };
 }
 
+/**
+ * Rename an active player at the table (Banker only).
+ */
+export function renamePlayer(
+  room: RoomState,
+  input: { targetPlayerId: string; newName: string; actorId: string }
+): RoomState {
+  requireBanker(room, input.actorId);
+  const players = getPlayersMap(room);
+  const target = requireActivePlayer(players, input.targetPlayerId, 'Player');
+  const nextName = normalizePlayerName(input.newName);
+  const normalizedKey = nextName.toLowerCase();
+
+  for (const existing of Object.values(players)) {
+    if (
+      existing.id !== target.id &&
+      existing.status !== 'removed' &&
+      existing.name.trim().toLowerCase() === normalizedKey
+    ) {
+      throw new LedgerError('DUPLICATE_NAME', `"${existing.name}" is already used by another seat.`);
+    }
+  }
+
+  return {
+    ...room,
+    players: {
+      ...players,
+      [target.id]: {
+        ...target,
+        name: nextName,
+      },
+    },
+  };
+}
+
+export type BoardShortcutEvent = 'club' | 'rest_house' | 'jail';
+
+/**
+ * Apply a 1-tap Club, Rest House, or Jail shortcut transaction on behalf of an active player.
+ */
+export function applyBoardEvent(
+  room: RoomState,
+  input: { playerId: string; event: BoardShortcutEvent }
+): RoomState {
+  requireActiveGame(room);
+  const players = getPlayersMap(room);
+  const transactions = getTransactionsMap(room);
+  const actor = requireActivePlayer(players, input.playerId, 'Player');
+  const others = Object.values(players)
+    .filter((p) => p.status === 'active' && p.id !== actor.id)
+    .sort((a, b) => a.joinedAt - b.joinedAt || a.id.localeCompare(b.id));
+  const now = nextTimestamp(room);
+
+  if (input.event === 'jail') {
+    const fine = room.meta.jailAmount ?? DEFAULT_JAIL_AMOUNT;
+    if (fine <= 0) {
+      throw new LedgerError('EVENT_DISABLED', 'Jail fine is disabled (set to 0 in room rules).');
+    }
+    const nextBalance = actor.balance - fine;
+    assertWithinNegativeLimit(actor, nextBalance, room.meta.negativeLimit);
+
+    const tx = createTransactionRecord({
+      type: 'jail',
+      fromId: actor.id,
+      toId: 'BANK',
+      amount: fine,
+      actorId: actor.id,
+      createdAt: now,
+      note: 'Jail fine',
+    });
+
+    return {
+      ...room,
+      meta: {
+        ...room.meta,
+        bankBalance: room.meta.bankBalance + fine,
+      },
+      players: {
+        ...players,
+        [actor.id]: {
+          ...actor,
+          balance: nextBalance,
+        },
+      },
+      transactions: {
+        ...transactions,
+        [tx.id]: tx,
+      },
+    };
+  }
+
+  if (others.length === 0) {
+    throw new LedgerError('NO_OTHER_PLAYERS', 'Need at least one other active player at the table.');
+  }
+
+  const nextPlayers: Record<string, Player> = { ...players };
+  const splits: Record<string, number> = {};
+
+  if (input.event === 'club') {
+    const perPlayer = room.meta.clubAmount ?? DEFAULT_CLUB_AMOUNT;
+    if (perPlayer <= 0) {
+      throw new LedgerError('EVENT_DISABLED', 'Club fee is disabled (set to 0 in room rules).');
+    }
+    const total = perPlayer * others.length;
+    const nextActorBalance = actor.balance - total;
+    assertWithinNegativeLimit(actor, nextActorBalance, room.meta.negativeLimit);
+
+    nextPlayers[actor.id] = { ...actor, balance: nextActorBalance };
+    splits[actor.id] = -total;
+    for (const other of others) {
+      nextPlayers[other.id] = { ...other, balance: other.balance + perPlayer };
+      splits[other.id] = perPlayer;
+    }
+
+    const tx = createTransactionRecord({
+      type: 'club',
+      fromId: actor.id,
+      toId: 'PLAYERS',
+      amount: total,
+      actorId: actor.id,
+      createdAt: now,
+      note: `Club (${others.length} × ${perPlayer})`,
+      splits,
+    });
+
+    return {
+      ...room,
+      players: nextPlayers,
+      transactions: {
+        ...transactions,
+        [tx.id]: tx,
+      },
+    };
+  }
+
+  // rest_house: collect perPlayer from each active other player
+  const perPlayer = room.meta.restHouseAmount ?? DEFAULT_REST_HOUSE_AMOUNT;
+  if (perPlayer <= 0) {
+    throw new LedgerError('EVENT_DISABLED', 'Rest House reward is disabled (set to 0 in room rules).');
+  }
+  const total = perPlayer * others.length;
+
+  for (const other of others) {
+    const nextOtherBalance = other.balance - perPlayer;
+    assertWithinNegativeLimit(other, nextOtherBalance, room.meta.negativeLimit);
+    nextPlayers[other.id] = { ...other, balance: nextOtherBalance };
+    splits[other.id] = -perPlayer;
+  }
+  nextPlayers[actor.id] = { ...actor, balance: actor.balance + total };
+  splits[actor.id] = total;
+
+  const tx = createTransactionRecord({
+    type: 'rest_house',
+    fromId: 'PLAYERS',
+    toId: actor.id,
+    amount: total,
+    actorId: actor.id,
+    createdAt: now,
+    note: `Rest House (${others.length} × ${perPlayer})`,
+    splits,
+  });
+
+  return {
+    ...room,
+    players: nextPlayers,
+    transactions: {
+      ...transactions,
+      [tx.id]: tx,
+    },
+  };
+}
+
 function findMortgageForTx(
   mortgages: Record<string, Mortgage>,
   tx: Transaction,
@@ -888,6 +1123,35 @@ export function undoLastTransaction(room: RoomState, input: { actorId: string })
         clearedAt: null,
       };
       nextBankBalance -= candidate.amount;
+      break;
+    }
+
+    case 'jail': {
+      const payer = requireActivePlayer(players, candidate.fromId, 'Original payer');
+      assertBankHasFunds(room, candidate.amount);
+      nextPlayers[payer.id] = {
+        ...payer,
+        balance: payer.balance + candidate.amount,
+      };
+      nextBankBalance -= candidate.amount;
+      break;
+    }
+
+    case 'club':
+    case 'rest_house': {
+      const entries = Object.entries(candidate.splits ?? {});
+      if (entries.length === 0) {
+        throw new LedgerError('CANNOT_UNDO', 'Split details missing for this event.');
+      }
+      for (const [id, delta] of entries) {
+        const participant = requireActivePlayer(players, id, 'Participant');
+        const revertedBalance = participant.balance - delta;
+        assertWithinNegativeLimit(participant, revertedBalance, room.meta.negativeLimit);
+        nextPlayers[id] = {
+          ...participant,
+          balance: revertedBalance,
+        };
+      }
       break;
     }
 

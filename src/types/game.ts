@@ -1,12 +1,25 @@
 export type PlayerStatus = 'active' | 'bankrupt' | 'removed';
 export type RoomStatus = 'lobby' | 'active';
 
+export type PlayerColorId =
+  | 'crimson'
+  | 'royal'
+  | 'emerald'
+  | 'amber'
+  | 'violet'
+  | 'orange'
+  | 'teal'
+  | 'slate';
+
 export type TransactionType =
   | 'transfer'
   | 'bank_pay'
   | 'pass_start'
   | 'mortgage'
   | 'unmortgage'
+  | 'club'
+  | 'rest_house'
+  | 'jail'
   | 'bankrupt'
   | 'remove'
   | 'undo';
@@ -25,11 +38,15 @@ export interface RoomMeta {
   negativeLimit: number;
   passStartAmount: number;
   mortgageInterestPct: 0 | 10;
+  clubAmount?: number;
+  restHouseAmount?: number;
+  jailAmount?: number;
 }
 
 export interface Player {
   id: string;
   name: string;
+  color?: PlayerColorId;
   balance: number;
   status: PlayerStatus;
   joinedAt: number;
@@ -54,6 +71,7 @@ export interface Transaction {
   amount: number;
   note?: string;
   mortgageId?: string;
+  splits?: Record<string, number>;
   actorId: string;
   createdAt: number;
   undone: boolean;
@@ -75,6 +93,7 @@ export interface LocalSession {
 
 export interface CreateRoomInput {
   creatorName: string;
+  creatorColor?: PlayerColorId;
   currencySymbol: string;
   currencyLocale?: string;
   startingCash: number;
@@ -82,6 +101,9 @@ export interface CreateRoomInput {
   negativeLimit: number;
   passStartAmount: number;
   mortgageInterestPct: 0 | 10;
+  clubAmount?: number;
+  restHouseAmount?: number;
+  jailAmount?: number;
   code?: string;
   creatorId?: string;
 }

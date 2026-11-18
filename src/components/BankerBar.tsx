@@ -16,6 +16,7 @@ import {
   getLatestUndoableTransaction,
   markPlayerExit,
   reassignBanker,
+  renamePlayer,
   undoLastTransaction,
 } from '../lib/ledger';
 import { formatCurrency } from '../lib/format';
@@ -30,7 +31,7 @@ export interface BankerBarProps {
   onError?: (message: string) => void;
 }
 
-type BusyAction = 'pass_start' | 'undo' | 'reassign' | 'exit' | 'claim' | null;
+type BusyAction = 'pass_start' | 'undo' | 'reassign' | 'rename' | 'exit' | 'claim' | null;
 
 interface PendingExitConfirm {
   playerId: string;
@@ -59,6 +60,12 @@ function formatUndoSummary(tx: Transaction, room: RoomState): string {
       return `Mortgage → ${toName} · ${amount}${tx.note ? ` (${tx.note})` : ''}`;
     case 'unmortgage':
       return `Unmortgage · ${fromName} · ${amount}${tx.note ? ` (${tx.note})` : ''}`;
+    case 'club':
+      return `Club · ${fromName} paid ${amount}`;
+    case 'rest_house':
+      return `Rest House · ${toName} collected ${amount}`;
+    case 'jail':
+      return `Jail fine · ${fromName} → Bank · ${amount}`;
     case 'transfer':
     default:
       return tx.note
@@ -77,6 +84,7 @@ export function BankerBar({
   const [passStartTargetId, setPassStartTargetId] = useState<string>(me.id);
   const [reassignTargetId, setReassignTargetId] = useState<string>('');
   const [manageTargetId, setManageTargetId] = useState<string>('');
+  const [renameInput, setRenameInput] = useState<string>('');
   const [manageOpen, setManageOpen] = useState<boolean>(false);
   const [pendingExit, setPendingExit] = useState<PendingExitConfirm | null>(null);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
@@ -122,6 +130,11 @@ export function BankerBar({
       setPendingExit(null);
     }
   }, [manageTargetId, pendingExit]);
+
+  useEffect(() => {
+    const selected = activePlayers.find((p) => p.id === manageTargetId);
+    setRenameInput(selected ? selected.name : '');
+  }, [manageTargetId, manageOpen]);
 
   function reportError(message: string) {
     setError(message);
@@ -412,7 +425,7 @@ export function BankerBar({
 
             <div className="table-divider stack-sm">
               <label className="field-label" htmlFor="banker-exit-select">
-                Bankrupt or remove player
+                Manage player
               </label>
               <select
                 id="banker-exit-select"
@@ -431,6 +444,49 @@ export function BankerBar({
                   </option>
                 ))}
               </select>
+
+              <div className="stack-xs">
+                <label className="field-label" htmlFor="banker-rename-input">
+                  Rename selected player
+                </label>
+                <div className="banker-action-row">
+                  <input
+                    id="banker-rename-input"
+                    type="text"
+                    className="input"
+                    maxLength={20}
+                    value={renameInput}
+                    onChange={(event) => {
+                      setError(null);
+                      setRenameInput(event.target.value);
+                    }}
+                    placeholder="New player name"
+                    disabled={busyAction !== null || !manageTarget}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={
+                      busyAction !== null ||
+                      !manageTarget ||
+                      renameInput.trim().length === 0 ||
+                      renameInput.trim() === manageTarget.name
+                    }
+                    onClick={() =>
+                      manageTarget &&
+                      runBankerMutation('rename', (latestRoom) =>
+                        renamePlayer(latestRoom, {
+                          targetPlayerId: manageTarget.id,
+                          newName: renameInput,
+                          actorId: me.id,
+                        })
+                      )
+                    }
+                  >
+                    {busyAction === 'rename' ? 'Saving...' : 'Save name'}
+                  </button>
+                </div>
+              </div>
 
               {!pendingExit && (
                 <div className="row-wrap">

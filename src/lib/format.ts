@@ -53,7 +53,7 @@ export function computeQuickChips(startingCash: number, passStartAmount: number)
       ? Math.max(10, Math.round(validStarting / 8))
       : 1000;
 
-  const multipliers = [0.05, 0.25, 0.5, 1, 2.5];
+  const multipliers = [0.025, 0.05, 0.25, 0.5, 1, 2.5];
   const chipSet = new Set<number>();
 
   for (const mult of multipliers) {

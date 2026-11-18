@@ -1,14 +1,22 @@
 import { useMemo } from 'react';
 import {
+  ArrowDownLeft,
   ArrowLeftRight,
-  CheckCircle2,
+  ArrowUpRight,
+  BadgeCheck,
+  Banknote,
   Flag,
   History,
+  Home,
+  KeyRound,
   Landmark,
+  Lock,
+  PartyPopper,
   RotateCcw,
   UserMinus,
 } from 'lucide-react';
 import type { Player, RoomState, Transaction } from '../types/game';
+import { getPlayerColorStyle } from '../lib/colors';
 import { formatCurrency } from '../lib/format';
 import './LedgerViews.css';
 
@@ -67,6 +75,21 @@ function describeCoreAction(tx: Transaction, players: Record<string, Player>): D
         title: `${fromName} cleared ${note ?? 'mortgage'}`,
         detail: null,
       };
+    case 'club':
+      return {
+        title: `${fromName} paid Club`,
+        detail: note,
+      };
+    case 'rest_house':
+      return {
+        title: `${toName} collected Rest House`,
+        detail: note,
+      };
+    case 'jail':
+      return {
+        title: `${fromName} paid Jail fine to Bank`,
+        detail: null,
+      };
     case 'bankrupt':
       return {
         title: `Banker marked ${fromName} bankrupt`,
@@ -110,7 +133,7 @@ function describeTransaction(
   return describeCoreAction(tx, players);
 }
 
-function renderTransactionIcon(tx: Transaction) {
+function renderTransactionIcon(tx: Transaction, viewerId: string) {
   switch (tx.type) {
     case 'pass_start':
       return (
@@ -121,19 +144,51 @@ function renderTransactionIcon(tx: Transaction) {
     case 'bank_pay':
       return (
         <span className="history-icon history-icon--in" aria-hidden="true">
-          <Landmark size={18} />
+          <Banknote size={18} />
         </span>
       );
     case 'mortgage':
       return (
         <span className="history-icon history-icon--accent" aria-hidden="true">
-          <Landmark size={18} />
+          <KeyRound size={18} />
         </span>
       );
     case 'unmortgage':
       return (
-        <span className="history-icon history-icon--accent" aria-hidden="true">
-          <CheckCircle2 size={18} />
+        <span className="history-icon history-icon--in" aria-hidden="true">
+          <BadgeCheck size={18} />
+        </span>
+      );
+    case 'club':
+      return (
+        <span
+          className={
+            tx.splits?.[viewerId] && tx.splits[viewerId] > 0
+              ? 'history-icon history-icon--in'
+              : 'history-icon history-icon--out'
+          }
+          aria-hidden="true"
+        >
+          <PartyPopper size={18} />
+        </span>
+      );
+    case 'rest_house':
+      return (
+        <span
+          className={
+            tx.splits?.[viewerId] && tx.splits[viewerId] < 0
+              ? 'history-icon history-icon--out'
+              : 'history-icon history-icon--in'
+          }
+          aria-hidden="true"
+        >
+          <Home size={18} />
+        </span>
+      );
+    case 'jail':
+      return (
+        <span className="history-icon history-icon--danger" aria-hidden="true">
+          <Lock size={18} />
         </span>
       );
     case 'bankrupt':
@@ -150,12 +205,34 @@ function renderTransactionIcon(tx: Transaction) {
         </span>
       );
     case 'transfer':
-    default:
+    default: {
+      if (tx.toId === 'BANK') {
+        return (
+          <span className="history-icon history-icon--out" aria-hidden="true">
+            <Landmark size={18} />
+          </span>
+        );
+      }
+      if (tx.toId === viewerId) {
+        return (
+          <span className="history-icon history-icon--in" aria-hidden="true">
+            <ArrowDownLeft size={18} />
+          </span>
+        );
+      }
+      if (tx.fromId === viewerId) {
+        return (
+          <span className="history-icon history-icon--out" aria-hidden="true">
+            <ArrowUpRight size={18} />
+          </span>
+        );
+      }
       return (
         <span className="history-icon" aria-hidden="true">
           <ArrowLeftRight size={18} />
         </span>
       );
+    }
   }
 }
 
@@ -194,13 +271,22 @@ export function HistoryView({ room, playerId }: HistoryViewProps) {
         <ul className="ledger-list">
           {sortedTransactions.map((tx) => {
             const { title, detail } = describeTransaction(tx, players, transactions);
+            const splitDelta = tx.splits?.[playerId];
             const showAmount = tx.type !== 'bankrupt' && tx.type !== 'remove' && tx.amount > 0;
             const isIncomingForMe =
-              !tx.undone && tx.type !== 'undo' && tx.toId === playerId && tx.fromId !== playerId;
+              !tx.undone &&
+              tx.type !== 'undo' &&
+              ((splitDelta !== undefined && splitDelta > 0) ||
+                (splitDelta === undefined && tx.toId === playerId && tx.fromId !== playerId));
             const isOutgoingForMe =
-              !tx.undone && tx.type !== 'undo' && tx.fromId === playerId && tx.toId !== playerId;
+              !tx.undone &&
+              tx.type !== 'undo' &&
+              ((splitDelta !== undefined && splitDelta < 0) ||
+                (splitDelta === undefined && tx.fromId === playerId && tx.toId !== playerId));
+            const displayMagnitude =
+              splitDelta !== undefined && !tx.undone ? Math.abs(splitDelta) : tx.amount;
             const formattedAmount = showAmount
-              ? formatCurrency(tx.amount, currencySymbol, currencyLocale)
+              ? formatCurrency(displayMagnitude, currencySymbol, currencyLocale)
               : null;
             const signedAmount = formattedAmount
               ? isIncomingForMe
@@ -209,13 +295,25 @@ export function HistoryView({ room, playerId }: HistoryViewProps) {
                   ? `-${formattedAmount}`
                   : formattedAmount
               : null;
+            const actorPlayer =
+              players[tx.fromId] ?? players[tx.toId] ?? players[tx.actorId];
+            const rowStyle = actorPlayer?.color
+              ? getPlayerColorStyle(actorPlayer.color)
+              : undefined;
 
             return (
               <li
                 key={tx.id}
-                className={tx.undone ? 'history-row history-row--undone' : 'history-row'}
+                style={rowStyle}
+                className={[
+                  'history-row',
+                  tx.undone ? 'history-row--undone' : '',
+                  rowStyle ? 'history-row--colored' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
               >
-                {renderTransactionIcon(tx)}
+                {renderTransactionIcon(tx, playerId)}
 
                 <div className="history-body">
                   <span className={tx.undone ? 'history-title history-title--undone' : 'history-title'}>

@@ -4,14 +4,27 @@ import {
   ArrowUpRight,
   ChevronDown,
   ChevronRight,
+  Home,
   Landmark,
+  Lock,
+  PartyPopper,
   Play,
   Send,
   ShieldCheck,
 } from 'lucide-react';
 import type { RoomState } from '../types/game';
+import { getPlayerColorStyle } from '../lib/colors';
 import { formatCurrency } from '../lib/format';
-import { MAX_PLAYERS, selectLobbyBanker, startGame } from '../lib/ledger';
+import {
+  applyBoardEvent,
+  DEFAULT_CLUB_AMOUNT,
+  DEFAULT_JAIL_AMOUNT,
+  DEFAULT_REST_HOUSE_AMOUNT,
+  MAX_PLAYERS,
+  selectLobbyBanker,
+  startGame,
+  type BoardShortcutEvent,
+} from '../lib/ledger';
 import { runRoomMutation } from '../lib/roomStore';
 import { BankerBar } from './BankerBar';
 import { PaySheet, type PaySheetMode } from './PaySheet';
@@ -42,6 +55,9 @@ export function TableView({
   });
   const [lobbyBusy, setLobbyBusy] = useState<'banker' | 'start' | null>(null);
   const [lobbyError, setLobbyError] = useState<string | null>(null);
+  const [pendingShortcut, setPendingShortcut] = useState<BoardShortcutEvent | null>(null);
+  const [shortcutBusy, setShortcutBusy] = useState(false);
+  const [shortcutError, setShortcutError] = useState<string | null>(null);
 
   const me = room.players[playerId] ?? null;
 
@@ -74,16 +90,49 @@ export function TableView({
     );
   }
 
-  const { currencySymbol, currencyLocale, negativeLimit, bankerId, bankBalance, startingCash, status } =
-    room.meta;
+  const {
+    currencySymbol,
+    currencyLocale,
+    negativeLimit,
+    bankerId,
+    bankBalance,
+    startingCash,
+    status,
+  } = room.meta;
+  const clubAmount = room.meta.clubAmount ?? DEFAULT_CLUB_AMOUNT;
+  const restHouseAmount = room.meta.restHouseAmount ?? DEFAULT_REST_HOUSE_AMOUNT;
+  const jailAmount = room.meta.jailAmount ?? DEFAULT_JAIL_AMOUNT;
   const isBankrupt = me.status === 'bankrupt';
   const isActive = me.status === 'active';
   const isBanker = isActive && me.id === bankerId;
   const myMortgageCount = activeMortgageCounts[me.id] ?? 0;
   const isNegative = me.balance < 0;
   const debtHeadroom = negativeLimit + me.balance;
+  const otherActiveCount = activePlayers.filter((p) => p.id !== me.id).length;
 
   const selectedBanker = activePlayers.find((player) => player.id === bankerId) ?? null;
+
+  async function handleConfirmShortcut() {
+    if (!pendingShortcut || shortcutBusy) {
+      return;
+    }
+    const event = pendingShortcut;
+    setShortcutBusy(true);
+    setShortcutError(null);
+    const result = await runRoomMutation(room.meta.code, (latestRoom) =>
+      applyBoardEvent(latestRoom, {
+        playerId: me.id,
+        event,
+      })
+    );
+    setShortcutBusy(false);
+    if (!result.ok) {
+      setShortcutError(result.error);
+      onError?.(result.error);
+      return;
+    }
+    setPendingShortcut(null);
+  }
 
   async function handleSelectLobbyBanker(nextBankerId: string) {
     if (lobbyBusy !== null) {
@@ -157,8 +206,13 @@ export function TableView({
               const isSelf = player.id === me.id;
               const isPlayerBanker = player.id === bankerId;
               return (
-                <li key={player.id} className="player-row">
+                <li
+                  key={player.id}
+                  style={getPlayerColorStyle(player.color)}
+                  className={player.color ? 'player-row player-row--colored' : 'player-row'}
+                >
                   <div className="player-name-row">
+                    {player.color && <span className="seat-dot" aria-hidden="true" />}
                     <span className="player-name">{player.name}</span>
                     {isSelf && <span className="pill">You</span>}
                     {isPlayerBanker && <span className="pill pill-accent">Banker</span>}
@@ -226,9 +280,14 @@ export function TableView({
 
   return (
     <div className="stack-md">
-      <section className="panel stack-md" aria-label="My wallet">
+      <section
+        style={getPlayerColorStyle(me.color)}
+        className={me.color ? 'panel wallet-panel--colored stack-md' : 'panel stack-md'}
+        aria-label="My wallet"
+      >
         <div className="row-between">
           <div className="row-wrap">
+            {me.color && <span className="seat-dot" aria-hidden="true" />}
             <h1>{me.name}</h1>
             {isBanker && <span className="pill pill-accent">Banker</span>}
             {isBankrupt && <span className="pill pill-danger">Bankrupt</span>}
@@ -298,24 +357,140 @@ export function TableView({
         </button>
 
         {isActive && (
-          <div className="wallet-actions">
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => openPaySheet('player_pay')}
-            >
-              <Send size={18} aria-hidden="true" />
-              <span>Pay</span>
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => openPaySheet('player_pay', 'BANK')}
-            >
-              <Landmark size={18} aria-hidden="true" />
-              <span>Pay Bank</span>
-            </button>
-          </div>
+          <>
+            <div className="wallet-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => openPaySheet('player_pay')}
+              >
+                <Send size={18} aria-hidden="true" />
+                <span>Pay</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => openPaySheet('player_pay', 'BANK')}
+              >
+                <Landmark size={18} aria-hidden="true" />
+                <span>Pay Bank</span>
+              </button>
+            </div>
+
+            {(clubAmount > 0 || restHouseAmount > 0 || jailAmount > 0) && (
+              <div className="table-divider stack-xs">
+                <span className="field-label">Board shortcuts</span>
+                <div className="wallet-shortcuts">
+                  <button
+                    type="button"
+                    className={
+                      pendingShortcut === 'club'
+                        ? 'wallet-shortcut-btn wallet-shortcut-btn--active'
+                        : 'wallet-shortcut-btn'
+                    }
+                    disabled={shortcutBusy || clubAmount <= 0 || otherActiveCount === 0}
+                    onClick={() => {
+                      setShortcutError(null);
+                      setPendingShortcut((prev) => (prev === 'club' ? null : 'club'));
+                    }}
+                  >
+                    <span className="wallet-shortcut-title">
+                      <PartyPopper size={14} aria-hidden="true" />
+                      <span>Club</span>
+                    </span>
+                    <span className="wallet-shortcut-meta tabular-nums">
+                      -{formatCurrency(clubAmount, currencySymbol, currencyLocale)} ea
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={
+                      pendingShortcut === 'rest_house'
+                        ? 'wallet-shortcut-btn wallet-shortcut-btn--active'
+                        : 'wallet-shortcut-btn'
+                    }
+                    disabled={shortcutBusy || restHouseAmount <= 0 || otherActiveCount === 0}
+                    onClick={() => {
+                      setShortcutError(null);
+                      setPendingShortcut((prev) => (prev === 'rest_house' ? null : 'rest_house'));
+                    }}
+                  >
+                    <span className="wallet-shortcut-title">
+                      <Home size={14} aria-hidden="true" />
+                      <span>Rest House</span>
+                    </span>
+                    <span className="wallet-shortcut-meta tabular-nums">
+                      +{formatCurrency(restHouseAmount, currencySymbol, currencyLocale)} ea
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={
+                      pendingShortcut === 'jail'
+                        ? 'wallet-shortcut-btn wallet-shortcut-btn--active'
+                        : 'wallet-shortcut-btn'
+                    }
+                    disabled={shortcutBusy || jailAmount <= 0}
+                    onClick={() => {
+                      setShortcutError(null);
+                      setPendingShortcut((prev) => (prev === 'jail' ? null : 'jail'));
+                    }}
+                  >
+                    <span className="wallet-shortcut-title">
+                      <Lock size={14} aria-hidden="true" />
+                      <span>Jail</span>
+                    </span>
+                    <span className="wallet-shortcut-meta tabular-nums">
+                      -{formatCurrency(jailAmount, currencySymbol, currencyLocale)} Bank
+                    </span>
+                  </button>
+                </div>
+
+                {pendingShortcut && (
+                  <div className="wallet-shortcut-confirm stack-xs" role="region" aria-label="Confirm board shortcut">
+                    <p className="text-sm">
+                      {pendingShortcut === 'club' &&
+                        `Pay ${formatCurrency(clubAmount, currencySymbol, currencyLocale)} to each of ${otherActiveCount} active ${otherActiveCount === 1 ? 'player' : 'players'} (${formatCurrency(clubAmount * otherActiveCount, currencySymbol, currencyLocale)} total)?`}
+                      {pendingShortcut === 'rest_house' &&
+                        `Collect ${formatCurrency(restHouseAmount, currencySymbol, currencyLocale)} from each of ${otherActiveCount} active ${otherActiveCount === 1 ? 'player' : 'players'} (+${formatCurrency(restHouseAmount * otherActiveCount, currencySymbol, currencyLocale)} total)?`}
+                      {pendingShortcut === 'jail' &&
+                        `Pay ${formatCurrency(jailAmount, currencySymbol, currencyLocale)} Jail bail fine to the Bank?`}
+                    </p>
+                    <div className="banker-confirm-row">
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-compact"
+                        disabled={shortcutBusy}
+                        onClick={handleConfirmShortcut}
+                      >
+                        {shortcutBusy ? 'Applying...' : 'Confirm'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-compact"
+                        disabled={shortcutBusy}
+                        onClick={() => {
+                          setPendingShortcut(null);
+                          setShortcutError(null);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {shortcutError && (
+                  <div className="table-inline-alert" role="alert">
+                    <AlertTriangle size={16} aria-hidden="true" />
+                    <span>{shortcutError}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
       </section>
 
@@ -347,9 +522,14 @@ export function TableView({
             const playerMortgages = activeMortgageCounts[player.id] ?? 0;
 
             return (
-              <li key={player.id} className="player-row">
+              <li
+                key={player.id}
+                style={getPlayerColorStyle(player.color)}
+                className={player.color ? 'player-row player-row--colored' : 'player-row'}
+              >
                 <div className="player-meta">
                   <div className="player-name-row">
+                    {player.color && <span className="seat-dot" aria-hidden="true" />}
                     <span className="player-name">{player.name}</span>
                     {isSelf && <span className="pill">You</span>}
                     {isPlayerBanker && <span className="pill pill-accent">Banker</span>}

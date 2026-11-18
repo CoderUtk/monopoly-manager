@@ -2,11 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { AlertTriangle, Delete, Landmark, Send, X } from 'lucide-react';
 import type { Player, RoomState } from '../types/game';
 import { applyPayment } from '../lib/ledger';
+import { getPlayerColorStyle } from '../lib/colors';
 import { computeQuickChips, formatCurrency } from '../lib/format';
 import { runRoomMutation } from '../lib/roomStore';
 import './TableView.css';
 
 export type PaySheetMode = 'player_pay' | 'bank_pay';
+
+const PLAYER_NOTE_SHORTCUTS = ['Rent', 'Tax', 'House', 'Utility', 'Auction', 'Fine'] as const;
+const BANK_NOTE_SHORTCUTS = ['Pass Start', 'Dividend', 'Prize', 'Refund', 'Rent'] as const;
 
 export interface PaySheetProps {
   open: boolean;
@@ -92,6 +96,7 @@ export function PaySheet({
 
   const recipientsRef = useRef<RecipientOption[]>(recipients);
   recipientsRef.current = recipients;
+  const wasOpenRef = useRef<boolean>(false);
 
   const quickChips = useMemo(
     () => computeQuickChips(room.meta.startingCash, room.meta.passStartAmount),
@@ -123,6 +128,7 @@ export function PaySheet({
 
   useEffect(() => {
     if (!open) {
+      wasOpenRef.current = false;
       setAmountStr('');
       setNote('');
       setError(null);
@@ -130,38 +136,40 @@ export function PaySheet({
       return;
     }
 
-    setAmountStr('');
-    setNote('');
-    setError(null);
-    setSubmitting(false);
-
+    const justOpened = !wasOpenRef.current;
+    wasOpenRef.current = true;
     const availableRecipients = recipientsRef.current;
-    if (
-      initialRecipientId &&
-      availableRecipients.some((option) => option.id === initialRecipientId)
-    ) {
-      setRecipientId(initialRecipientId);
+
+    if (justOpened) {
+      setAmountStr('');
+      setNote('');
+      setError(null);
+      setSubmitting(false);
+
+      if (
+        initialRecipientId &&
+        availableRecipients.some((option) => option.id === initialRecipientId)
+      ) {
+        setRecipientId(initialRecipientId);
+        return;
+      }
+
+      if (mode === 'player_pay') {
+        const firstOtherPlayer = availableRecipients.find((option) => !option.isBank);
+        setRecipientId(firstOtherPlayer ? firstOtherPlayer.id : 'BANK');
+        return;
+      }
+
+      const selfOption = availableRecipients.find((option) => option.id === me.id);
+      setRecipientId(selfOption ? selfOption.id : (availableRecipients[0]?.id ?? ''));
       return;
     }
 
-    if (mode === 'player_pay') {
-      const firstOtherPlayer = availableRecipients.find((option) => !option.isBank);
-      setRecipientId(firstOtherPlayer ? firstOtherPlayer.id : 'BANK');
-      return;
+    if (recipients.length > 0 && !recipients.some((option) => option.id === recipientId)) {
+      const firstOther = recipients.find((option) => !option.isBank);
+      setRecipientId(firstOther ? firstOther.id : recipients[0].id);
     }
-
-    const selfOption = availableRecipients.find((option) => option.id === me.id);
-    setRecipientId(selfOption ? selfOption.id : (availableRecipients[0]?.id ?? ''));
-  }, [open, mode, initialRecipientId, me.id]);
-
-  useEffect(() => {
-    if (!open || recipients.length === 0) {
-      return;
-    }
-    if (!recipients.some((option) => option.id === recipientId)) {
-      setRecipientId(recipients[0].id);
-    }
-  }, [open, recipientId, recipients]);
+  }, [open, mode, initialRecipientId, me.id, recipientId, recipients]);
 
   const applyAmountKey = useCallback(
     (input: string) => {
@@ -281,6 +289,7 @@ export function PaySheet({
   }
 
   const sheetTitle = mode === 'bank_pay' ? 'Bank payout' : 'Send payment';
+  const noteShortcuts = mode === 'bank_pay' ? BANK_NOTE_SHORTCUTS : PLAYER_NOTE_SHORTCUTS;
 
   return (
     <dialog
@@ -295,11 +304,11 @@ export function PaySheet({
       }}
       onClick={handleBackdropClick}
     >
-      <form className="stack-md" onSubmit={handleSubmit}>
-        <div className="row-between">
+      <form className="pay-sheet-form" onSubmit={handleSubmit}>
+        <div className="pay-sheet-header">
           <div className="stack-xs">
             <h2 id="pay-sheet-title">{sheetTitle}</h2>
-            <p className="text-sm text-muted">
+            <p className="text-xs text-muted">
               {mode === 'bank_pay'
                 ? 'Pay an active player directly from the Bank.'
                 : `From ${me.name} to a player or the Bank.`}
@@ -316,247 +325,282 @@ export function PaySheet({
           </button>
         </div>
 
-        <div className="stack-xs">
-          <span className="field-label" id="pay-recipient-label">
-            Recipient
-          </span>
-          <div className="pay-recipient-list" role="group" aria-labelledby="pay-recipient-label">
-            {recipients.map((option) => {
-              const isSelected = option.id === recipientId;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  className={
-                    isSelected
-                      ? 'pay-recipient-pill pay-recipient-pill--active'
-                      : 'pay-recipient-pill'
-                  }
-                  aria-pressed={isSelected}
-                  disabled={submitting}
-                  onClick={() => {
-                    setError(null);
-                    setRecipientId(option.id);
-                  }}
-                >
-                  {option.isBank && <Landmark size={16} aria-hidden="true" />}
-                  <span>{option.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="pay-amount-bar">
+        <div className="pay-sheet-body stack-sm">
           <div className="stack-xs">
-            <span className="text-xs text-muted">Amount</span>
-            <output
-              aria-live="polite"
-              className={
-                amount === 0
-                  ? 'pay-amount-readout pay-amount-readout--zero tabular-nums'
-                  : 'pay-amount-readout tabular-nums'
-              }
-            >
-              {formattedAmount}
-            </output>
+            <span className="field-label" id="pay-recipient-label">
+              Recipient
+            </span>
+            <div className="pay-recipient-list" role="group" aria-labelledby="pay-recipient-label">
+              {recipients.map((option) => {
+                const isSelected = option.id === recipientId;
+                const playerColorStyle = option.player
+                  ? getPlayerColorStyle(option.player.color)
+                  : undefined;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    style={playerColorStyle}
+                    className={
+                      isSelected
+                        ? option.player?.color
+                          ? 'pay-recipient-pill pay-recipient-pill--active pay-recipient-pill--colored'
+                          : 'pay-recipient-pill pay-recipient-pill--active'
+                        : 'pay-recipient-pill'
+                    }
+                    aria-pressed={isSelected}
+                    disabled={submitting}
+                    onClick={() => {
+                      setError(null);
+                      setRecipientId(option.id);
+                    }}
+                  >
+                    {option.isBank ? (
+                      <Landmark size={16} aria-hidden="true" />
+                    ) : (
+                      option.player?.color && (
+                        <span className="seat-dot" aria-hidden="true" />
+                      )
+                    )}
+                    <span>{option.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <button
-            type="button"
-            className="pay-clear-btn"
-            onClick={handleClear}
-            disabled={submitting || amount === 0}
-          >
-            Clear
-          </button>
+
+          <div className="pay-amount-bar">
+            <div className="stack-xs">
+              <span className="text-xs text-muted">Amount</span>
+              <output
+                aria-live="polite"
+                className={
+                  amount === 0
+                    ? 'pay-amount-readout pay-amount-readout--zero tabular-nums'
+                    : 'pay-amount-readout tabular-nums'
+                }
+              >
+                {formattedAmount}
+              </output>
+            </div>
+            <button
+              type="button"
+              className="pay-clear-btn"
+              onClick={handleClear}
+              disabled={submitting || amount === 0}
+            >
+              Clear
+            </button>
+          </div>
+
+          <div className="pay-preview-list" aria-live="polite">
+            {mode === 'player_pay' ? (
+              <>
+                <div className="row-between text-sm">
+                  <span className="text-muted">Your balance after transfer</span>
+                  <strong
+                    className={
+                      projectedSenderBalance < 0 ? 'tabular-nums text-danger' : 'tabular-nums'
+                    }
+                  >
+                    {formatCurrency(me.balance, currencySymbol, currencyLocale)} →{' '}
+                    {formatCurrency(projectedSenderBalance, currencySymbol, currencyLocale)}
+                  </strong>
+                </div>
+                {selectedRecipient?.player && amount > 0 && (
+                  <div className="row-between text-sm">
+                    <span className="text-muted">{selectedRecipient.player.name} after transfer</span>
+                    <strong className="tabular-nums text-success">
+                      {formatCurrency(
+                        selectedRecipient.player.balance,
+                        currencySymbol,
+                        currencyLocale
+                      )}{' '}
+                      →{' '}
+                      {formatCurrency(
+                        selectedRecipient.player.balance + amount,
+                        currencySymbol,
+                        currencyLocale
+                      )}
+                    </strong>
+                  </div>
+                )}
+                {isOverdraft && (
+                  <div className="table-inline-alert" role="alert">
+                    <AlertTriangle size={16} aria-hidden="true" />
+                    <span>
+                      Exceeds debt limit (
+                      <span className="tabular-nums">
+                        {formatCurrency(-negativeLimit, currencySymbol, currencyLocale)}
+                      </span>
+                      ) by{' '}
+                      <span className="tabular-nums">
+                        {formatCurrency(overdraftExcess, currencySymbol, currencyLocale)}
+                      </span>
+                      .
+                    </span>
+                  </div>
+                )}
+                {remainingHeadroom !== null && (
+                  <div className="table-inline-warning">
+                    <span>
+                      Within debt limit (
+                      <span className="tabular-nums">
+                        {formatCurrency(remainingHeadroom, currencySymbol, currencyLocale)}
+                      </span>{' '}
+                      headroom left).
+                    </span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="row-between text-sm">
+                  <span className="text-muted">Bank balance after payout</span>
+                  <strong
+                    className={
+                      isBankInsufficient ? 'tabular-nums text-danger' : 'tabular-nums'
+                    }
+                  >
+                    {formatCurrency(bankBalance, currencySymbol, currencyLocale)} →{' '}
+                    {formatCurrency(projectedBankBalance, currencySymbol, currencyLocale)}
+                  </strong>
+                </div>
+                {selectedRecipient?.player && (
+                  <div className="row-between text-sm">
+                    <span className="text-muted">{selectedRecipient.player.name} after payout</span>
+                    <strong className="tabular-nums text-success">
+                      {formatCurrency(
+                        selectedRecipient.player.balance,
+                        currencySymbol,
+                        currencyLocale
+                      )}{' '}
+                      →{' '}
+                      {formatCurrency(
+                        selectedRecipient.player.balance + amount,
+                        currencySymbol,
+                        currencyLocale
+                      )}
+                    </strong>
+                  </div>
+                )}
+                {isBankInsufficient && (
+                  <div className="table-inline-alert" role="alert">
+                    <AlertTriangle size={16} aria-hidden="true" />
+                    <span>
+                      Exceeds Bank balance by{' '}
+                      <span className="tabular-nums">
+                        {formatCurrency(bankShortfall, currencySymbol, currencyLocale)}
+                      </span>
+                      .
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="pay-chip-row" aria-label="Quick add amounts">
+            {quickChips.map((chipValue) => (
+              <button
+                key={chipValue}
+                type="button"
+                className="pay-chip tabular-nums"
+                disabled={submitting}
+                onClick={() => handleAddChip(chipValue)}
+              >
+                +{formatCurrency(chipValue, currencySymbol, currencyLocale)}
+              </button>
+            ))}
+          </div>
+
+          <div className="pay-keypad" role="group" aria-label="Amount keypad">
+            {KEYPAD_DIGITS.map((key) => (
+              <button
+                key={key}
+                type="button"
+                className="pay-key tabular-nums"
+                disabled={submitting}
+                onClick={() => applyAmountKey(key)}
+              >
+                {key}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="pay-key"
+              disabled={submitting || amountStr.length === 0}
+              onClick={() => applyAmountKey('Backspace')}
+              aria-label="Backspace"
+            >
+              <Delete size={20} aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
-        <div className="pay-preview-list" aria-live="polite">
-          {mode === 'player_pay' ? (
-            <>
-              <div className="row-between text-sm">
-                <span className="text-muted">Your balance after transfer</span>
-                <strong
-                  className={
-                    projectedSenderBalance < 0 ? 'tabular-nums text-danger' : 'tabular-nums'
-                  }
-                >
-                  {formatCurrency(me.balance, currencySymbol, currencyLocale)} →{' '}
-                  {formatCurrency(projectedSenderBalance, currencySymbol, currencyLocale)}
-                </strong>
-              </div>
-              {selectedRecipient?.player && amount > 0 && (
-                <div className="row-between text-sm">
-                  <span className="text-muted">{selectedRecipient.player.name} after transfer</span>
-                  <strong className="tabular-nums text-success">
-                    {formatCurrency(
-                      selectedRecipient.player.balance,
-                      currencySymbol,
-                      currencyLocale
-                    )}{' '}
-                    →{' '}
-                    {formatCurrency(
-                      selectedRecipient.player.balance + amount,
-                      currencySymbol,
-                      currencyLocale
-                    )}
-                  </strong>
-                </div>
-              )}
-              {isOverdraft && (
-                <div className="table-inline-alert" role="alert">
-                  <AlertTriangle size={16} aria-hidden="true" />
-                  <span>
-                    Exceeds debt limit (
-                    <span className="tabular-nums">
-                      {formatCurrency(-negativeLimit, currencySymbol, currencyLocale)}
-                    </span>
-                    ) by{' '}
-                    <span className="tabular-nums">
-                      {formatCurrency(overdraftExcess, currencySymbol, currencyLocale)}
-                    </span>
-                    .
-                  </span>
-                </div>
-              )}
-              {remainingHeadroom !== null && (
-                <div className="table-inline-warning">
-                  <span>
-                    Within debt limit (
-                    <span className="tabular-nums">
-                      {formatCurrency(remainingHeadroom, currencySymbol, currencyLocale)}
-                    </span>{' '}
-                    headroom left).
-                  </span>
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              <div className="row-between text-sm">
-                <span className="text-muted">Bank balance after payout</span>
-                <strong
-                  className={
-                    isBankInsufficient ? 'tabular-nums text-danger' : 'tabular-nums'
-                  }
-                >
-                  {formatCurrency(bankBalance, currencySymbol, currencyLocale)} →{' '}
-                  {formatCurrency(projectedBankBalance, currencySymbol, currencyLocale)}
-                </strong>
-              </div>
-              {selectedRecipient?.player && (
-                <div className="row-between text-sm">
-                  <span className="text-muted">{selectedRecipient.player.name} after payout</span>
-                  <strong className="tabular-nums text-success">
-                    {formatCurrency(
-                      selectedRecipient.player.balance,
-                      currencySymbol,
-                      currencyLocale
-                    )}{' '}
-                    →{' '}
-                    {formatCurrency(
-                      selectedRecipient.player.balance + amount,
-                      currencySymbol,
-                      currencyLocale
-                    )}
-                  </strong>
-                </div>
-              )}
-              {isBankInsufficient && (
-                <div className="table-inline-alert" role="alert">
-                  <AlertTriangle size={16} aria-hidden="true" />
-                  <span>
-                    Exceeds Bank balance by{' '}
-                    <span className="tabular-nums">
-                      {formatCurrency(bankShortfall, currencySymbol, currencyLocale)}
-                    </span>
-                    .
-                  </span>
-                </div>
-              )}
-            </>
+        <div className="pay-sheet-footer stack-sm">
+          <div className="pay-note-group stack-xs">
+            <div className="pay-comment-chips" role="group" aria-label="Quick comment shortcuts">
+              {noteShortcuts.map((preset) => {
+                const isActiveNote = note.trim().toLowerCase() === preset.toLowerCase();
+                return (
+                  <button
+                    key={preset}
+                    type="button"
+                    className={
+                      isActiveNote
+                        ? 'pay-comment-chip pay-comment-chip--active'
+                        : 'pay-comment-chip'
+                    }
+                    aria-pressed={isActiveNote}
+                    disabled={submitting}
+                    onClick={() => setNote(isActiveNote ? '' : preset)}
+                  >
+                    {preset}
+                  </button>
+                );
+              })}
+            </div>
+            <input
+              id="pay-note-input"
+              aria-label="Note (optional)"
+              type="text"
+              className="input pay-note-input"
+              maxLength={60}
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder={mode === 'bank_pay' ? 'Note (e.g. Dividend, Prize)' : 'Note (e.g. Rent, Tax)'}
+              disabled={submitting}
+            />
+          </div>
+
+          {!isBankerAuthorized && (
+            <div className="table-inline-alert" role="alert">
+              <AlertTriangle size={16} aria-hidden="true" />
+              <span>Only the current Banker can send Bank payouts.</span>
+            </div>
           )}
-        </div>
 
-        <div className="pay-chip-row" aria-label="Quick add amounts">
-          {quickChips.map((chipValue) => (
-            <button
-              key={chipValue}
-              type="button"
-              className="pay-chip tabular-nums"
-              disabled={submitting}
-              onClick={() => handleAddChip(chipValue)}
-            >
-              +{formatCurrency(chipValue, currencySymbol, currencyLocale)}
-            </button>
-          ))}
-        </div>
+          {error && (
+            <div className="table-inline-alert" role="alert">
+              <AlertTriangle size={16} aria-hidden="true" />
+              <span>{error}</span>
+            </div>
+          )}
 
-        <div className="pay-keypad" role="group" aria-label="Amount keypad">
-          {KEYPAD_DIGITS.map((key) => (
-            <button
-              key={key}
-              type="button"
-              className="pay-key tabular-nums"
-              disabled={submitting}
-              onClick={() => applyAmountKey(key)}
-            >
-              {key}
-            </button>
-          ))}
-          <button
-            type="button"
-            className="pay-key"
-            disabled={submitting || amountStr.length === 0}
-            onClick={() => applyAmountKey('Backspace')}
-            aria-label="Backspace"
-          >
-            <Delete size={20} aria-hidden="true" />
+          <button type="submit" className="btn btn-primary pay-submit-btn" disabled={!canSubmit}>
+            <Send size={18} aria-hidden="true" />
+            <span>
+              {submitting
+                ? 'Sending...'
+                : amount > 0 && selectedRecipient
+                  ? mode === 'bank_pay'
+                    ? `Send ${formattedAmount} to ${selectedRecipient.player?.name ?? selectedRecipient.label}`
+                    : `Pay ${formattedAmount} to ${selectedRecipient.label}`
+                  : 'Enter an amount'}
+            </span>
           </button>
         </div>
-
-        <div className="field">
-          <label className="field-label" htmlFor="pay-note-input">
-            Note (optional)
-          </label>
-          <input
-            id="pay-note-input"
-            type="text"
-            className="input"
-            maxLength={60}
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            placeholder={mode === 'bank_pay' ? 'e.g. Bank dividend, Prize' : 'e.g. Rent, Tax'}
-            disabled={submitting}
-          />
-        </div>
-
-        {!isBankerAuthorized && (
-          <div className="table-inline-alert" role="alert">
-            <AlertTriangle size={16} aria-hidden="true" />
-            <span>Only the current Banker can send Bank payouts.</span>
-          </div>
-        )}
-
-        {error && (
-          <div className="table-inline-alert" role="alert">
-            <AlertTriangle size={16} aria-hidden="true" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        <button type="submit" className="btn btn-primary pay-submit-btn" disabled={!canSubmit}>
-          <Send size={18} aria-hidden="true" />
-          <span>
-            {submitting
-              ? 'Sending...'
-              : amount > 0 && selectedRecipient
-                ? mode === 'bank_pay'
-                  ? `Send ${formattedAmount} to ${selectedRecipient.player?.name ?? selectedRecipient.label}`
-                  : `Pay ${formattedAmount} to ${selectedRecipient.label}`
-                : 'Enter an amount'}
-          </span>
-        </button>
       </form>
     </dialog>
   );

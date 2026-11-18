@@ -126,6 +126,73 @@
   overflow-wrap: anywhere;
 }
 
+.color-dot {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: var(--radius-pill);
+  background-color: var(--seat-accent, var(--color-accent));
+  flex-shrink: 0;
+}
+
+.lobby-color-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.lobby-color-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--touch-min);
+  padding: var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background-color: transparent;
+  color: var(--color-ink);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out);
+}
+
+.lobby-color-btn:hover:not(:disabled) {
+  background-color: var(--seat-soft, var(--color-surface-subtle));
+  border-color: var(--seat-accent, var(--color-border-strong));
+}
+
+.lobby-color-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+
+.lobby-color-btn--active,
+.lobby-color-btn--active:hover:not(:disabled) {
+  background-color: var(--seat-soft, var(--color-accent-soft));
+  border-color: var(--seat-accent, var(--color-accent));
+  box-shadow: 0 0 0 1px var(--seat-accent, var(--color-accent));
+}
+
+.lobby-color-swatch {
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: var(--radius-pill);
+  background-color: var(--seat-accent, var(--color-accent));
+  flex-shrink: 0;
+}
+
+@media (max-width: 26rem) {
+  .lobby-color-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .lobby-option-grid {
   display: flex;
   flex-wrap: wrap;
@@ -142,7 +209,7 @@
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
-  background-color: var(--color-surface-raised);
+  background-color: transparent;
   color: var(--color-ink);
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);

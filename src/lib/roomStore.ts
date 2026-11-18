@@ -5,10 +5,13 @@ import {
   runTransaction,
   type DatabaseReference,
 } from 'firebase/database';
-import type { CreateRoomInput, RoomState } from '../types/game';
+import type { CreateRoomInput, PlayerColorId, RoomState } from '../types/game';
 import { getFirebaseDatabase, isFirebaseConfigured } from './firebase';
 import {
   createInitialRoom,
+  DEFAULT_CLUB_AMOUNT,
+  DEFAULT_JAIL_AMOUNT,
+  DEFAULT_REST_HOUSE_AMOUNT,
   joinOrReclaimPlayer,
   LedgerError,
 } from './ledger';
@@ -45,6 +48,9 @@ function normalizeRoomState(raw: unknown): RoomState | null {
       status: candidate.meta.status ?? 'active',
       bankStartingCash: candidate.meta.bankStartingCash ?? 0,
       bankBalance: candidate.meta.bankBalance ?? 0,
+      clubAmount: candidate.meta.clubAmount ?? DEFAULT_CLUB_AMOUNT,
+      restHouseAmount: candidate.meta.restHouseAmount ?? DEFAULT_REST_HOUSE_AMOUNT,
+      jailAmount: candidate.meta.jailAmount ?? DEFAULT_JAIL_AMOUNT,
     },
     players: normalizeRecordMap(candidate.players),
     mortgages: normalizeRecordMap(candidate.mortgages),
@@ -288,13 +294,14 @@ export async function runRoomMutation(
  */
 export async function joinRoom(
   code: string,
-  input: { playerId: string; name: string }
+  input: { playerId: string; name: string; color?: PlayerColorId }
 ): Promise<{ ok: true; room: RoomState; playerId: string } | { ok: false; error: string }> {
   let joinedPlayerId = input.playerId.trim();
   const result = await runRoomMutation(code, (room) => {
     const joined = joinOrReclaimPlayer(room, {
       playerId: input.playerId,
       name: input.name,
+      color: input.color,
     });
     joinedPlayerId = joined.playerId;
     return joined.room;

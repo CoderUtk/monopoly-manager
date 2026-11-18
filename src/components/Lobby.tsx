@@ -6,7 +6,7 @@ import {
   Search,
   UserCheck,
 } from 'lucide-react';
-import type { LocalSession, RoomState } from '../types/game';
+import type { LocalSession, Player, PlayerColorId, RoomState } from '../types/game';
 import {
   createRoom,
   fetchRoomOnce,
@@ -15,7 +15,18 @@ import {
   reclaimSeat,
 } from '../lib/roomStore';
 import { formatCurrency } from '../lib/format';
-import { MAX_PLAYERS } from '../lib/ledger';
+import {
+  DEFAULT_CLUB_AMOUNT,
+  DEFAULT_JAIL_AMOUNT,
+  DEFAULT_REST_HOUSE_AMOUNT,
+  MAX_PLAYERS,
+} from '../lib/ledger';
+import {
+  getFirstAvailableColor,
+  getPlayerColorStyle,
+  getTakenColorOwners,
+  PLAYER_COLORS,
+} from '../lib/colors';
 import { createLocalPlayerId, getRoomCodeFromUrl } from '../lib/session';
 import './Lobby.css';
 
@@ -44,6 +55,54 @@ const CURRENCY_PRESETS: ReadonlyArray<CurrencyPreset> = [
 
 const ROOM_CODE_LENGTH = 6;
 const MAX_NAME_LENGTH = 20;
+
+interface ColorPickerFieldProps {
+  labelId: string;
+  label: string;
+  selectedColor: PlayerColorId;
+  takenOwners?: Partial<Record<PlayerColorId, Player>>;
+  disabled: boolean;
+  onSelect: (color: PlayerColorId) => void;
+}
+
+function ColorPickerField({
+  labelId,
+  label,
+  selectedColor,
+  takenOwners,
+  disabled,
+  onSelect,
+}: ColorPickerFieldProps) {
+  return (
+    <div className="field">
+      <span className="field-label" id={labelId}>
+        {label}
+      </span>
+      <div className="lobby-color-grid" role="group" aria-labelledby={labelId}>
+        {PLAYER_COLORS.map((color) => {
+          const takenBy = takenOwners?.[color.id];
+          const isSelected = selectedColor === color.id && !takenBy;
+          return (
+            <button
+              key={color.id}
+              type="button"
+              style={getPlayerColorStyle(color.id)}
+              aria-label={takenBy ? `${color.label} (taken by ${takenBy.name})` : color.label}
+              aria-pressed={isSelected}
+              title={takenBy ? `Taken by ${takenBy.name}` : color.label}
+              className={isSelected ? 'lobby-color-btn lobby-color-btn--active' : 'lobby-color-btn'}
+              disabled={disabled || Boolean(takenBy)}
+              onClick={() => onSelect(color.id)}
+            >
+              <span className="lobby-color-swatch" aria-hidden="true" />
+              <span>{color.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function sanitizeRoomCodeInput(raw: string): string {
   return raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, ROOM_CODE_LENGTH);
@@ -87,18 +146,25 @@ export function Lobby({ activeTab: controlledTab, onTabChange, onEnterRoom }: Lo
   const [lookupError, setLookupError] = useState<string | null>(null);
 
   const [joinName, setJoinName] = useState('');
+  const [joinColor, setJoinColor] = useState<PlayerColorId>(PLAYER_COLORS[1].id);
   const [joinLoading, setJoinLoading] = useState(false);
   const [reclaimingId, setReclaimingId] = useState<string | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
 
   // Create room state
   const [creatorName, setCreatorName] = useState('');
+  const [creatorColor, setCreatorColor] = useState<PlayerColorId>(PLAYER_COLORS[0].id);
   const [currencyPreset, setCurrencyPreset] = useState<CurrencyPresetId>('inr');
   const [customCurrency, setCustomCurrency] = useState('');
   const [startingCashInput, setStartingCashInput] = useState('15000');
   const [bankStartingCashInput, setBankStartingCashInput] = useState('100000');
   const [negativeLimitInput, setNegativeLimitInput] = useState('5000');
   const [passStartInput, setPassStartInput] = useState('2000');
+  const [clubAmountInput, setClubAmountInput] = useState(String(DEFAULT_CLUB_AMOUNT));
+  const [restHouseAmountInput, setRestHouseAmountInput] = useState(
+    String(DEFAULT_REST_HOUSE_AMOUNT)
+  );
+  const [jailAmountInput, setJailAmountInput] = useState(String(DEFAULT_JAIL_AMOUNT));
   const [mortgageInterestPct, setMortgageInterestPct] = useState<0 | 10>(10);
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -160,6 +226,20 @@ export function Lobby({ activeTab: controlledTab, onTabChange, onEnterRoom }: Lo
       seats.find((player) => player.name.trim().toLowerCase() === normalized) ?? null
     );
   }, [foundRoom, joinName, seats]);
+
+  const takenColorOwners = useMemo(
+    () => getTakenColorOwners(foundRoom?.players),
+    [foundRoom?.players]
+  );
+
+  useEffect(() => {
+    if (!foundRoom) {
+      return;
+    }
+    if (takenColorOwners[joinColor]) {
+      setJoinColor(getFirstAvailableColor(foundRoom.players));
+    }
+  }, [foundRoom, joinColor, takenColorOwners]);
 
   const joinBusy = lookupLoading || joinLoading || reclaimingId !== null;
 
@@ -248,11 +328,19 @@ export function Lobby({ activeTab: controlledTab, onTabChange, onEnterRoom }: Lo
     const result = await joinRoom(foundRoom.meta.code, {
       playerId,
       name: trimmedName,
+      color: joinColor,
     });
     setJoinLoading(false);
 
     if (!result.ok) {
       setJoinError(result.error);
+      fetchRoomOnce(foundRoom.meta.code)
+        .then((latest) => {
+          if (latest) {
+            setFoundRoom(latest);
+          }
+        })
+        .catch(() => {});
       return;
     }
 
@@ -349,16 +437,38 @@ export function Lobby({ activeTab: controlledTab, onTabChange, onEnterRoom }: Lo
       return;
     }
 
+    const clubAmount = parseNonNegativeWholeNumber(clubAmountInput, 'Club fee');
+    if (!clubAmount.ok) {
+      setCreateError(clubAmount.error);
+      return;
+    }
+
+    const restHouseAmount = parseNonNegativeWholeNumber(restHouseAmountInput, 'Rest House amount');
+    if (!restHouseAmount.ok) {
+      setCreateError(restHouseAmount.error);
+      return;
+    }
+
+    const jailAmount = parseNonNegativeWholeNumber(jailAmountInput, 'Jail fine');
+    if (!jailAmount.ok) {
+      setCreateError(jailAmount.error);
+      return;
+    }
+
     setCreateLoading(true);
     const creatorId = createLocalPlayerId();
     const result = await createRoom({
       creatorName: trimmedCreator,
+      creatorColor,
       currencySymbol,
       currencyLocale,
       startingCash: startingCash.value,
       bankStartingCash: bankStartingCash.value,
       negativeLimit: negativeLimit.value,
       passStartAmount: passStartAmount.value,
+      clubAmount: clubAmount.value,
+      restHouseAmount: restHouseAmount.value,
+      jailAmount: jailAmount.value,
       mortgageInterestPct,
       creatorId,
     });
@@ -563,6 +673,18 @@ export function Lobby({ activeTab: controlledTab, onTabChange, onEnterRoom }: Lo
                     />
                   </div>
 
+                  <ColorPickerField
+                    labelId="lobby-join-color-label"
+                    label="Your color (first come, first served)"
+                    selectedColor={joinColor}
+                    takenOwners={takenColorOwners}
+                    disabled={joinBusy}
+                    onSelect={(color) => {
+                      setJoinColor(color);
+                      setJoinError(null);
+                    }}
+                  />
+
                   {duplicatePlayer && (
                     <div className="lobby-error" role="alert">
                       <AlertTriangle size={18} aria-hidden="true" />
@@ -612,6 +734,13 @@ export function Lobby({ activeTab: controlledTab, onTabChange, onEnterRoom }: Lo
                         <li key={seat.id} className="seat-row">
                           <div className="seat-info">
                             <div className="seat-name-row">
+                              {seat.color && (
+                                <span
+                                  className="color-dot"
+                                  style={getPlayerColorStyle(seat.color)}
+                                  aria-hidden="true"
+                                />
+                              )}
                               <span className="seat-name">{seat.name}</span>
                               {isBanker && <span className="pill pill-accent">Banker</span>}
                               {isBankrupt && <span className="pill pill-danger">Bankrupt</span>}
@@ -672,6 +801,17 @@ export function Lobby({ activeTab: controlledTab, onTabChange, onEnterRoom }: Lo
               disabled={createLoading}
             />
           </div>
+
+          <ColorPickerField
+            labelId="lobby-creator-color-label"
+            label="Your color"
+            selectedColor={creatorColor}
+            disabled={createLoading}
+            onSelect={(color) => {
+              setCreatorColor(color);
+              setCreateError(null);
+            }}
+          />
 
           <div className="field">
             <span className="field-label" id="lobby-currency-label">
@@ -823,6 +963,66 @@ export function Lobby({ activeTab: controlledTab, onTabChange, onEnterRoom }: Lo
                 disabled={createLoading}
               />
               <span className="field-hint">Set to 0 to disallow negative balances.</span>
+            </div>
+
+            <div className="field">
+              <label htmlFor="lobby-club-amount" className="field-label">
+                Club fee (pay each player)
+              </label>
+              <input
+                id="lobby-club-amount"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={1}
+                className="input tabular-nums"
+                value={clubAmountInput}
+                onChange={(event) => {
+                  setClubAmountInput(event.target.value);
+                  setCreateError(null);
+                }}
+                disabled={createLoading}
+              />
+            </div>
+
+            <div className="field">
+              <label htmlFor="lobby-rest-house-amount" className="field-label">
+                Rest House (collect each)
+              </label>
+              <input
+                id="lobby-rest-house-amount"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={1}
+                className="input tabular-nums"
+                value={restHouseAmountInput}
+                onChange={(event) => {
+                  setRestHouseAmountInput(event.target.value);
+                  setCreateError(null);
+                }}
+                disabled={createLoading}
+              />
+            </div>
+
+            <div className="field">
+              <label htmlFor="lobby-jail-amount" className="field-label">
+                Jail bail fine (to Bank)
+              </label>
+              <input
+                id="lobby-jail-amount"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={1}
+                className="input tabular-nums"
+                value={jailAmountInput}
+                onChange={(event) => {
+                  setJailAmountInput(event.target.value);
+                  setCreateError(null);
+                }}
+                disabled={createLoading}
+              />
             </div>
           </div>
 

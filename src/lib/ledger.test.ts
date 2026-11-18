@@ -7,7 +7,9 @@ import {
   selectLobbyBanker,
   startGame,
   joinOrReclaimPlayer,
+  renamePlayer,
   applyPayment,
+  applyBoardEvent,
   issueMortgage,
   clearMortgage,
   markPlayerExit,
@@ -70,6 +72,7 @@ describe('formatCurrency & computeQuickChips', () => {
     for (let i = 1; i < chips.length; i += 1) {
       expect(chips[i]).toBeGreaterThan(chips[i - 1]);
     }
+    expect(chips).toContain(50);
     expect(chips).toContain(2000);
 
     const classicChips = computeQuickChips(1500, 200);
@@ -719,5 +722,97 @@ describe('undoLastTransaction', () => {
     expect(() =>
       undoLastTransaction(drainedBankState, { actorId: 'p-creator' })
     ).toThrow(LedgerError);
+  });
+});
+
+describe('player colors, renamePlayer, and Club/Rest House/Jail board shortcuts', () => {
+  it('assigns player colors first-come-first-serve and rejects duplicates', () => {
+    const base = createInitialRoom({
+      creatorId: 'p-1',
+      creatorName: 'Aarav',
+      creatorColor: 'royal',
+      currencySymbol: '₹',
+      startingCash: 15000,
+      bankStartingCash: 100000,
+      negativeLimit: 5000,
+      passStartAmount: 2000,
+      mortgageInterestPct: 10,
+      code: 'CLR123',
+    });
+    expect(base.players['p-1'].color).toBe('royal');
+
+    expect(() =>
+      joinOrReclaimPlayer(base, { playerId: 'p-2', name: 'Raj', color: 'royal' })
+    ).toThrow(LedgerError);
+
+    const joined = joinOrReclaimPlayer(base, {
+      playerId: 'p-2',
+      name: 'Raj',
+      color: 'emerald',
+    }).room;
+    expect(joined.players['p-2'].color).toBe('emerald');
+
+    const autoAssigned = joinOrReclaimPlayer(joined, {
+      playerId: 'p-3',
+      name: 'Priya',
+    }).room;
+    expect(autoAssigned.players['p-3'].color).toBe('crimson');
+  });
+
+  it('allows only the Banker to rename active players and rejects duplicates', () => {
+    const room = makeRoomWithPlayers('p-raj');
+
+    expect(() =>
+      renamePlayer(room, { targetPlayerId: 'p-priya', newName: 'Meera', actorId: 'p-creator' })
+    ).toThrow(LedgerError);
+
+    expect(() =>
+      renamePlayer(room, { targetPlayerId: 'p-priya', newName: 'raj', actorId: 'p-raj' })
+    ).toThrow(LedgerError);
+
+    const renamed = renamePlayer(room, {
+      targetPlayerId: 'p-priya',
+      newName: '  Meera  ',
+      actorId: 'p-raj',
+    });
+    expect(renamed.players['p-priya'].name).toBe('Meera');
+  });
+
+  it('applies Club, Rest House, and Jail events and reverses them cleanly via undo', () => {
+    const room = makeRoomWithPlayers('p-creator');
+
+    // Club: p-creator pays 100 each to p-raj and p-priya (200 total)
+    const afterClub = applyBoardEvent(room, { playerId: 'p-creator', event: 'club' });
+    expect(afterClub.players['p-creator'].balance).toBe(14800);
+    expect(afterClub.players['p-raj'].balance).toBe(15100);
+    expect(afterClub.players['p-priya'].balance).toBe(15100);
+
+    const undoneClub = undoLastTransaction(afterClub, { actorId: 'p-creator' });
+    expect(undoneClub.players['p-creator'].balance).toBe(15000);
+    expect(undoneClub.players['p-raj'].balance).toBe(15000);
+    expect(undoneClub.players['p-priya'].balance).toBe(15000);
+
+    // Rest House: p-raj collects 100 each from p-creator and p-priya (+200 total)
+    const afterRestHouse = applyBoardEvent(undoneClub, {
+      playerId: 'p-raj',
+      event: 'rest_house',
+    });
+    expect(afterRestHouse.players['p-raj'].balance).toBe(15200);
+    expect(afterRestHouse.players['p-creator'].balance).toBe(14900);
+    expect(afterRestHouse.players['p-priya'].balance).toBe(14900);
+
+    const undoneRestHouse = undoLastTransaction(afterRestHouse, { actorId: 'p-creator' });
+    expect(undoneRestHouse.players['p-raj'].balance).toBe(15000);
+    expect(undoneRestHouse.players['p-creator'].balance).toBe(15000);
+    expect(undoneRestHouse.players['p-priya'].balance).toBe(15000);
+
+    // Jail: p-priya pays 500 bail fine to Bank
+    const afterJail = applyBoardEvent(undoneRestHouse, { playerId: 'p-priya', event: 'jail' });
+    expect(afterJail.players['p-priya'].balance).toBe(14500);
+    expect(afterJail.meta.bankBalance).toBe(100500);
+
+    const undoneJail = undoLastTransaction(afterJail, { actorId: 'p-creator' });
+    expect(undoneJail.players['p-priya'].balance).toBe(15000);
+    expect(undoneJail.meta.bankBalance).toBe(100000);
   });
 });
