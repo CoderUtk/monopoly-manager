@@ -3,6 +3,7 @@ import {
   loadSession,
   saveSession,
   clearSession,
+  extractRoomCodeFromScan,
   getRoomCodeFromUrl,
   createLocalPlayerId,
 } from './session';
@@ -106,6 +107,16 @@ describe('getRoomCodeFromUrl', () => {
     expect(getRoomCodeFromUrl('?room=ab34')).toBeNull();
     expect(getRoomCodeFromUrl('?room=ab34cdef')).toBeNull();
     expect(getRoomCodeFromUrl('?room=ab$4cd')).toBeNull();
+  });
+
+  it('extracts room codes from scanned URLs and plain codes', () => {
+    expect(extractRoomCodeFromScan('https://monopoly-manager-ca4.pages.dev/?room=nsv9wd')).toBe(
+      'NSV9WD'
+    );
+    expect(extractRoomCodeFromScan('ec5bv2')).toBe('EC5BV2');
+    expect(extractRoomCodeFromScan('https://example.com/#/join?room=ab34cd')).toBe('AB34CD');
+    expect(extractRoomCodeFromScan('https://example.com/other')).toBeNull();
+    expect(extractRoomCodeFromScan('   ')).toBeNull();
   });
 });
 

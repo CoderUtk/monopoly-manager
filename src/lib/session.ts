@@ -119,6 +119,42 @@ export function getRoomCodeFromUrl(search?: string): string | null {
 }
 
 /**
+ * Extract a 6-character room code from scanned QR text (invite URL or plain code).
+ */
+export function extractRoomCodeFromScan(rawText: string): string | null {
+  const trimmed = rawText.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const direct = trimmed.toUpperCase();
+  if (ROOM_CODE_PATTERN.test(direct)) {
+    return direct;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    const fromSearch = getRoomCodeFromUrl(parsed.search);
+    if (fromSearch) {
+      return fromSearch;
+    }
+    if (parsed.hash.includes('room=')) {
+      const hashQuery = parsed.hash.slice(parsed.hash.indexOf('?'));
+      const fromHash = getRoomCodeFromUrl(hashQuery);
+      if (fromHash) {
+        return fromHash;
+      }
+    }
+  } catch {
+    if (trimmed.includes('room=')) {
+      return getRoomCodeFromUrl(trimmed.slice(trimmed.indexOf('?')));
+    }
+  }
+
+  return null;
+}
+
+/**
  * Generate a unique local player ID stored in the browser session.
  */
 export function createLocalPlayerId(): string {

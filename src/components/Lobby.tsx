@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowRight,
   PlusCircle,
+  QrCode,
   Search,
   UserCheck,
 } from 'lucide-react';
@@ -28,6 +29,7 @@ import {
   PLAYER_COLORS,
 } from '../lib/colors';
 import { createLocalPlayerId, getRoomCodeFromUrl } from '../lib/session';
+import { QrScannerSheet } from './QrScannerSheet';
 import './Lobby.css';
 
 export type LobbyTab = 'join' | 'create';
@@ -144,6 +146,7 @@ export function Lobby({ activeTab: controlledTab, onTabChange, onEnterRoom }: Lo
     Boolean(firebaseReady && initialUrlCode)
   );
   const [lookupError, setLookupError] = useState<string | null>(null);
+  const [scannerOpen, setScannerOpen] = useState<boolean>(false);
 
   const [joinName, setJoinName] = useState('');
   const [joinColor, setJoinColor] = useState<PlayerColorId>(PLAYER_COLORS[1].id);
@@ -269,13 +272,12 @@ export function Lobby({ activeTab: controlledTab, onTabChange, onEnterRoom }: Lo
     }
   }
 
-  async function handleFindRoom(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function lookupRoomByCode(rawCode: string) {
     if (joinBusy) {
       return;
     }
 
-    const code = sanitizeRoomCodeInput(roomCodeInput);
+    const code = sanitizeRoomCodeInput(rawCode);
     setRoomCodeInput(code);
     setLookupError(null);
     setJoinError(null);
@@ -301,6 +303,16 @@ export function Lobby({ activeTab: controlledTab, onTabChange, onEnterRoom }: Lo
     } finally {
       setLookupLoading(false);
     }
+  }
+
+  async function handleFindRoom(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await lookupRoomByCode(roomCodeInput);
+  }
+
+  function handleScannedRoomCode(scannedCode: string) {
+    setScannerOpen(false);
+    void lookupRoomByCode(scannedCode);
   }
 
   async function handleJoinGame(event: FormEvent<HTMLFormElement>) {
@@ -564,6 +576,16 @@ export function Lobby({ activeTab: controlledTab, onTabChange, onEnterRoom }: Lo
               </div>
             </div>
 
+            <button
+              type="button"
+              className="btn btn-secondary lobby-scan-btn"
+              disabled={joinBusy}
+              onClick={() => setScannerOpen(true)}
+            >
+              <QrCode size={18} aria-hidden="true" />
+              <span>Scan QR code</span>
+            </button>
+
             {lookupError && (
               <div className="lobby-error" role="alert">
                 <AlertTriangle size={18} aria-hidden="true" />
@@ -770,6 +792,12 @@ export function Lobby({ activeTab: controlledTab, onTabChange, onEnterRoom }: Lo
               </div>
             </>
           )}
+
+          <QrScannerSheet
+            open={scannerOpen}
+            onClose={() => setScannerOpen(false)}
+            onScanCode={handleScannedRoomCode}
+          />
         </div>
       )}
 
