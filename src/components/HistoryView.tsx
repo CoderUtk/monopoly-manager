@@ -1,10 +1,13 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ArrowDownLeft,
   ArrowLeftRight,
   ArrowUpRight,
   BadgeCheck,
   Banknote,
+  BarChart3,
+  ChevronDown,
+  ChevronUp,
   Flag,
   History,
   Home,
@@ -18,6 +21,7 @@ import {
 import type { Player, RoomState, Transaction } from '../types/game';
 import { getPlayerColorStyle } from '../lib/colors';
 import { formatCurrency } from '../lib/format';
+import { computeRoomStats } from '../lib/stats';
 import './LedgerViews.css';
 
 export interface HistoryViewProps {
@@ -237,8 +241,11 @@ function renderTransactionIcon(tx: Transaction, viewerId: string) {
 }
 
 export function HistoryView({ room, playerId }: HistoryViewProps) {
+  const [statsOpen, setStatsOpen] = useState(false);
   const players = room.players ?? {};
   const transactions = room.transactions ?? {};
+  const me = players[playerId] ?? null;
+  const isBanker = Boolean(me && me.status === 'active' && playerId === room.meta.bankerId);
 
   const sortedTransactions = useMemo(
     () =>
@@ -248,10 +255,208 @@ export function HistoryView({ room, playerId }: HistoryViewProps) {
     [transactions]
   );
 
+  const stats = useMemo(() => computeRoomStats(room, playerId), [room, playerId]);
+
   const { currencySymbol, currencyLocale } = room.meta;
+  const fmt = (val: number) => formatCurrency(val, currencySymbol, currencyLocale);
+  const { personal, banker } = stats;
+  const netPrefix = personal.netFromStart > 0 ? '+' : '';
+  const netFormatted = `${netPrefix}${fmt(personal.netFromStart)}`;
 
   return (
-    <section className="panel stack-md" aria-label="Transaction history">
+    <div className="stack-md">
+      <section className="panel stats-section" aria-label="Statistics">
+        <button
+          type="button"
+          className="stats-toggle-btn"
+          aria-expanded={statsOpen}
+          onClick={() => setStatsOpen((prev) => !prev)}
+        >
+          <span className="stats-toggle-title">
+            <BarChart3 size={18} aria-hidden="true" />
+            <span>{isBanker ? 'Your stats & Bank economy' : 'Your stats'}</span>
+          </span>
+          <span className="stats-toggle-aside">
+            <span
+              className={
+                personal.netFromStart > 0
+                  ? 'pill pill-accent tabular-nums'
+                  : personal.netFromStart < 0
+                    ? 'pill pill-danger tabular-nums'
+                    : 'pill tabular-nums'
+              }
+            >
+              Net {netFormatted}
+            </span>
+            {statsOpen ? (
+              <ChevronUp size={18} aria-hidden="true" />
+            ) : (
+              <ChevronDown size={18} aria-hidden="true" />
+            )}
+          </span>
+        </button>
+
+        {statsOpen && (
+          <div className="stats-body">
+            <div className="stats-grid">
+              <div className="stats-card">
+                <span className="stats-card-title">Cash flow</span>
+                <div className="stats-kv-list">
+                  <div className="stats-kv-row">
+                    <span className="stats-kv-label">Earned</span>
+                    <span className="stats-kv-value stats-kv-value--in tabular-nums">
+                      +{fmt(personal.earned)}
+                    </span>
+                  </div>
+                  <div className="stats-kv-row">
+                    <span className="stats-kv-label">Spent</span>
+                    <span className="stats-kv-value stats-kv-value--out tabular-nums">
+                      -{fmt(personal.spent)}
+                    </span>
+                  </div>
+                  <div className="stats-kv-row">
+                    <span className="stats-kv-label">Net vs start</span>
+                    <span
+                      className={[
+                        'stats-kv-value',
+                        'tabular-nums',
+                        personal.netFromStart > 0
+                          ? 'stats-kv-value--in'
+                          : personal.netFromStart < 0
+                            ? 'stats-kv-value--out'
+                            : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                    >
+                      {netFormatted}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="stats-card">
+                <span className="stats-card-title">Pass Start</span>
+                <div className="stats-kv-list">
+                  <div className="stats-kv-row">
+                    <span className="stats-kv-label">Laps completed</span>
+                    <span className="stats-kv-value tabular-nums">{personal.passStartLaps}</span>
+                  </div>
+                  <div className="stats-kv-row">
+                    <span className="stats-kv-label">Salary earned</span>
+                    <span className="stats-kv-value stats-kv-value--in tabular-nums">
+                      {fmt(personal.passStartEarned)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="stats-card">
+                <span className="stats-card-title">Rivals</span>
+                <div className="stats-kv-list">
+                  <div className="stats-kv-row">
+                    <span className="stats-kv-label">Paid you most</span>
+                    <span className="stats-kv-value tabular-nums">
+                      {personal.paidMeMost
+                        ? `${personal.paidMeMost.name} (${fmt(personal.paidMeMost.amount)})`
+                        : '—'}
+                    </span>
+                  </div>
+                  <div className="stats-kv-row">
+                    <span className="stats-kv-label">You paid most</span>
+                    <span className="stats-kv-value tabular-nums">
+                      {personal.iPaidMost
+                        ? `${personal.iPaidMost.name} (${fmt(personal.iPaidMost.amount)})`
+                        : '—'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="stats-card">
+                <span className="stats-card-title">Board events</span>
+                <div className="stats-kv-list">
+                  <div className="stats-kv-row">
+                    <span className="stats-kv-label">Club paid</span>
+                    <span className="stats-kv-value tabular-nums">{fmt(personal.clubPaid)}</span>
+                  </div>
+                  <div className="stats-kv-row">
+                    <span className="stats-kv-label">Rest House</span>
+                    <span className="stats-kv-value stats-kv-value--in tabular-nums">
+                      +{fmt(personal.restHouseCollected)}
+                    </span>
+                  </div>
+                  <div className="stats-kv-row">
+                    <span className="stats-kv-label">Jail fines</span>
+                    <span className="stats-kv-value tabular-nums">{fmt(personal.jailPaid)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="stats-card stats-card--wide">
+                <span className="stats-card-title">Mortgages</span>
+                <div className="stats-kv-list">
+                  <div className="stats-kv-row">
+                    <span className="stats-kv-label">
+                      Active debt ({personal.activeMortgageCount}{' '}
+                      {personal.activeMortgageCount === 1 ? 'property' : 'properties'})
+                    </span>
+                    <span className="stats-kv-value tabular-nums">
+                      {fmt(personal.activeMortgagePayoff)}
+                    </span>
+                  </div>
+                  <div className="stats-kv-row">
+                    <span className="stats-kv-label">Interest paid</span>
+                    <span className="stats-kv-value tabular-nums">
+                      {fmt(personal.mortgageInterestPaid)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {isBanker && (
+                <div className="stats-card stats-card--wide" aria-label="Banker economy split">
+                  <span className="stats-card-title">Banker economy split</span>
+                  <div className="economy-bar" aria-hidden="true">
+                    <div
+                      className="economy-bar-bank"
+                      style={{ width: `${banker.bankSharePct}%` }}
+                    />
+                    <div
+                      className="economy-bar-players"
+                      style={{ width: `${banker.playersSharePct}%` }}
+                    />
+                  </div>
+                  <div className="stats-kv-list">
+                    <div className="stats-kv-row">
+                      <span className="stats-kv-label">Bank vault left ({banker.bankSharePct}%)</span>
+                      <span className="stats-kv-value tabular-nums">{fmt(banker.bankBalance)}</span>
+                    </div>
+                    <div className="stats-kv-row">
+                      <span className="stats-kv-label">
+                        Players&apos; cash ({banker.playersSharePct}%)
+                      </span>
+                      <span className="stats-kv-value tabular-nums">
+                        {fmt(banker.playersCashTotal)}
+                      </span>
+                    </div>
+                    <div className="stats-kv-row">
+                      <span className="stats-kv-label">
+                        Active mortgage debt ({banker.activeMortgageCount})
+                      </span>
+                      <span className="stats-kv-value tabular-nums">
+                        {fmt(banker.activeMortgagePayoff)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="panel stack-md" aria-label="Transaction history">
       <div className="row-between">
         <div className="row">
           <History size={20} aria-hidden="true" />
@@ -350,6 +555,7 @@ export function HistoryView({ room, playerId }: HistoryViewProps) {
           })}
         </ul>
       )}
-    </section>
+      </section>
+    </div>
   );
 }
